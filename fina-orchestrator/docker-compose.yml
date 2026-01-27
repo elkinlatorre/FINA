@@ -1,0 +1,29 @@
+services:
+  mcp-data-server:
+    build:
+      context: ../fina-mcp-server
+    container_name: mcp-data-server
+    ports:
+      - "8001:8001"
+    networks:
+      - fina-net
+
+  agent-engine:
+    build:
+      context: ../fina-agent-engine
+    container_name: agent-engine
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - HUGGINGFACEHUB_API_TOKEN=${HUGGINGFACEHUB_API_TOKEN}
+    volumes:
+      - ../fina-agent-engine/data:/app/data
+    depends_on:
+      - mcp-data-server
+    networks:
+      - fina-net
+
+networks:
+  fina-net:
+    driver: bridge

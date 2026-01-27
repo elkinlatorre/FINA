@@ -1,0 +1,23 @@
+# --- Entornos Virtuales ---
+**/venv/
+**/.env
+
+# --- Base de Datos y Datos Persistentes ---
+# No queremos subir tus vectores (40 chunks) ni la base de datos SQLite con tu dinero
+**/data/
+**/chroma_db/
+**/vector_db/
+**/*.db
+**/*.sqlite
+
+# --- Archivos Temporales de Python ---
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+
+# --- Docker ---
+.docker/
+
+# --- OS específicos ---
+.DS_Store
+Thumbs.db
