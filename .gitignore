@@ -1,6 +1,7 @@
 # --- Entornos Virtuales ---
 **/venv/
 **/.env
+**/.idea/
 
 # --- Base de Datos y Datos Persistentes ---
 # No queremos subir tus vectores (40 chunks) ni la base de datos SQLite con tu dinero
