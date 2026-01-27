@@ -35,6 +35,13 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[types.Text
         return [types.TextContent(type="text", text=str(data))]
     raise ValueError(f"Herramienta no encontrada: {name}")
 
+async def handle_messages(request):
+    """
+    Wrapper para manejar las peticiones POST del cliente MCP.
+    Pasa los componentes ASGI necesarios al transporte SSE.
+    """
+    await sse.handle_post_message(request.scope, request.receive, request._send)
+
 sse = SseServerTransport("/messages")
 
 async def handle_sse(request):
@@ -54,6 +61,6 @@ app = Starlette(
     routes=[
         Route("/health", endpoint=health),
         Route("/sse", endpoint=handle_sse),
-        Route("/messages", endpoint=sse.handle_post_message, methods=["POST"]),
+        Route("/messages", endpoint=handle_messages, methods=["POST"]),
     ],
 )
