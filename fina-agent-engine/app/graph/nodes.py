@@ -35,7 +35,15 @@ async def call_model(state):
     # Retornamos el mensaje para actualizar el estado del grafo
     return {"messages": [response]}
 
+def handle_tool_error(state) -> dict:
+    error = state.get("error")
+    return {"messages": [f"Error: {error}. Please analyze this error and inform the user or retry if possible."]}
+
 # 2. Setup the Tools Node
 # This is a prebuilt LangGraph node that automatically executes
 # the tools requested by the model.
-tool_node = ToolNode(FINA_TOOLS)
+tool_node = ToolNode(FINA_TOOLS).with_fallbacks(
+    [ToolNode(FINA_TOOLS)],
+    exceptions_to_handle=(Exception,)
+)
+tool_node = ToolNode(FINA_TOOLS, handle_tool_errors=True)
