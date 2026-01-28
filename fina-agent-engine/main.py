@@ -1,16 +1,26 @@
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from app.api.routes import router as api_router
+from app.graph.builder import graph_manager
 from app.core.logger import get_logger
 
 logger = get_logger("MAIN_AGENT")
 
 # Inicialización de FastAPI con metadata para el Swagger
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Al arrancar: Inicializamos el grafo y la DB
+    await graph_manager.initialize()
+    yield
+    # Al apagar: Cerramos la conexión física
+    await graph_manager.close()
 app = FastAPI(
     title="FINA Agent Engine - Nodo A",
     description="Orquestador Inteligente para consultas financieras y análisis de portafolio.",
     version="1.0.0",
     docs_url="/docs",  # URL del Swagger
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
 # Inclusión de rutas

@@ -1,51 +1,51 @@
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from app.graph.state import AgentState
 from app.graph.nodes import call_model, tool_node
 
+DB_PATH = "checkpoints.sqlite"
 
-def should_continue(state):
-    """
-    Conditional edge: determines if the model wants to call a tool
-    or if it has finished the reasoning process.
-    """
-    messages = state["messages"]
-    last_message = messages[-1]
+class FinancialGraphManager:
+    def __init__(self):
+        self.graph = None
+        self.saver = None
 
-    # If there are tool calls in the message, we continue to the tools node
-    if last_message.tool_calls:
-        return "tools"
+    async def initialize(self):
+        """Inicializa el saver y compila el grafo una sola vez."""
+        if self.graph is None:
+            # 1. Creamos el saver asíncrono
+            self.saver = AsyncSqliteSaver.from_conn_string(DB_PATH)
+            # Entramos al contexto manualmente para mantenerlo abierto
+            checkpointer = await self.saver.__aenter__()
 
-    # Otherwise, we stop and return the final answer to the user
-    return END
+            # 2. Construcción del Workflow
+            workflow = StateGraph(AgentState)
+            workflow.add_node("agent", call_model)
+            workflow.add_node("tools", tool_node)
+            workflow.set_entry_point("agent")
 
+            workflow.add_conditional_edges("agent", self.should_continue)
+            workflow.add_edge("tools", "agent")
 
-def create_financial_graph():
-    """
-    Builds the ReAct graph for the financial agent.
-    """
-    # 1. Initialize the graph with our state definition
-    workflow = StateGraph(AgentState)
+            # 3. Compilación con el checkpointer persistente
+            # Nota: Usamos interrupt_after=["agent"] para capturar la respuesta del analista
+            self.graph = workflow.compile(
+                checkpointer=checkpointer,
+                interrupt_after=["agent"]
+            )
+        return self.graph
 
-    # 2. Define the nodes
-    workflow.add_node("agent", call_model)
-    workflow.add_node("tools", tool_node)
+    def should_continue(self, state):
+        messages = state["messages"]
+        last_message = messages[-1]
+        if last_message.tool_calls:
+            return "tools"
+        return END
 
-    # 3. Set the entry point
-    workflow.set_entry_point("agent")
+    async def close(self):
+        """Cierra la conexión a la DB al apagar la app."""
+        if self.saver:
+            await self.saver.__aexit__(None, None, None)
 
-    # 4. Define the edges
-    # After the agent speaks, we decide if we continue or stop
-    workflow.add_conditional_edges(
-        "agent",
-        should_continue,
-    )
-
-    # After tools execute, we always go back to the agent to analyze the observation
-    workflow.add_edge("tools", "agent")
-
-    # 5. Compile the graph
-    return workflow.compile()
-
-
-# Singleton instance of the graph
-financial_advisor_graph = create_financial_graph()
+# Instanciamos el Manager (pero no el grafo todavía)
+graph_manager = FinancialGraphManager()
