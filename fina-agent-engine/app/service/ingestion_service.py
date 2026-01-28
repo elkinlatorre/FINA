@@ -39,3 +39,18 @@ class IngestionService:
         vector_db.save_local(self.db_path)
 
         return len(chunks)
+
+    async def search_in_vector_db(self, query: str, k: int = 3):
+        """
+        Busca los fragmentos más relevantes en FAISS.
+        """
+        if not os.path.exists("data/vector_db"):
+            return "There are no documents uploaded to the system."
+
+        # Aquí iría tu lógica de:
+        # 1. vector_db = FAISS.load_local(...)
+        # 2. docs = vector_db.similarity_search(query, k=k)
+        # 3. return "\n".join([d.page_content for d in docs])
+
+        # Por ahora devolvemos un placeholder funcional para la fase 1
+        return f"Simulated search results for: {query}"

@@ -15,11 +15,11 @@ async def handle_list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="fetch_portfolio",
-            description="Consulta el portafolio financiero del usuario desde la DB privada.",
+            description="Retrieve the user's financial portfolio from the private database.",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "user_id": {"type": "string", "description": "ID único del analista/usuario"}
+                    "user_id": {"type": "string", "description": "Unique ID of the analyst/user"}
                 },
                 "required": ["user_id"]
             }
@@ -30,10 +30,10 @@ async def handle_list_tools() -> list[types.Tool]:
 async def handle_call_tool(name: str, arguments: dict | None) -> list[types.TextContent]:
     if name == "fetch_portfolio":
         user_id = arguments.get("user_id")
-        logger.info(f"Petición de portafolio recibida para: {user_id}")
+        logger.info(f"Portfolio invoke received for: {user_id}")
         data = await get_portfolio(user_id)
         return [types.TextContent(type="text", text=str(data))]
-    raise ValueError(f"Herramienta no encontrada: {name}")
+    raise ValueError(f"Tool not found: {name}")
 
 async def handle_messages(request):
     """
@@ -53,7 +53,7 @@ async def health(request):
 
 async def startup():
     await init_db()
-    logger.info("Base de datos inicializada y Servidor MCP listo.")
+    logger.info("Database initialized and MCP server ready.")
 
 app = Starlette(
     debug=True,
