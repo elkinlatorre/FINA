@@ -1,8 +1,11 @@
 import os
 import shutil
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from pydantic import BaseModel
 from app.service.mcp_client import MCPClient
+from langchain_core.messages import HumanMessage
+from app.graph.builder import financial_advisor_graph
 from app.service.ingestion_service import IngestionService
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.core.logger import get_logger
 
 # Configuración
@@ -13,6 +16,43 @@ router = APIRouter()
 mcp_client = MCPClient()
 ingest_service = IngestionService()
 
+
+# --- Esquema para el Chat ---
+class ChatRequest(BaseModel):
+    message: str
+    user_id: str = "user123"
+
+
+@router.post("/chat", tags=["Financial Agent"])
+async def chat_endpoint(request: ChatRequest):
+    """
+    Financial Advisor Chat: Orchestrates reasoning between PDF (RAG)
+    and Private Vault (MCP) using a ReAct cycle.
+    """
+    logger.info(f"Received query from {request.user_id}: {request.message}")
+
+    try:
+        # Inicializamos el estado del grafo con el mensaje del usuario
+        initial_state = {
+            "messages": [HumanMessage(content=request.message)]
+        }
+
+        # Ejecutamos el grafo (Fase 2 completa)
+        # Esto disparará el ciclo: Agent -> Tools -> Agent -> END
+        final_state = await financial_advisor_graph.ainvoke(initial_state)
+
+        # El último mensaje en la lista es la respuesta final del agente
+        final_response = final_state["messages"][-1].content
+
+        return {
+            "status": "success",
+            "user_id": request.user_id,
+            "response": final_response
+        }
+
+    except Exception as e:
+        logger.error(f"Error in Graph Execution: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Agent Reasoning Error: {str(e)}")
 
 @router.get("/health", tags=["System"])
 async def health_check():

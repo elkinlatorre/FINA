@@ -17,7 +17,7 @@ class MCPClient:
             # Usamos la base del host para el health check
             health_url = self.sse_url.replace("/sse", "/health")
             async with httpx.AsyncClient() as client:
-                response = await client.get(health_url, timeout=2.0)
+                response = await client.get(health_url, timeout=30.0)
                 return response.status_code == 200
         except Exception:
             return False
