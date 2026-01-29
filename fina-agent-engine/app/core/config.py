@@ -4,5 +4,9 @@ VALID_SUPERVISORS = {
     "SUP-1122": "Compliance Officer - Area B"
 }
 
-# You can also define other security limits here
-MAX_RETRY_ATTEMPTS = 3
+# Dynamic definition of keywords for governance
+SENSITIVE_FINANCIAL_KEYWORDS = [
+    "risk", "recommendation", "portfolio", "assets", "advice"
+]
+
+RISK_FINANCIAL_KEYWORDS = ["buy", "sell", "trade", "allocate", "invest"]
