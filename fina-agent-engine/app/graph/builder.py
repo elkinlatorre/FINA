@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, END
+from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from app.graph.state import AgentState
 from app.graph.nodes import call_model, tool_node
@@ -38,7 +39,7 @@ class FinancialGraphManager:
     def should_continue(self, state):
         messages = state["messages"]
         last_message = messages[-1]
-        if last_message.tool_calls:
+        if isinstance(last_message, AIMessage) and last_message.tool_calls:
             return "tools"
         return END
 
