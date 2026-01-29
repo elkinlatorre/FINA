@@ -1,13 +1,14 @@
-from langgraph.graph import StateGraph, END
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from app.graph.state import AgentState
-from app.graph.nodes import call_model, tool_node
-from app.core.config import SENSITIVE_FINANCIAL_KEYWORDS, RISK_FINANCIAL_KEYWORDS
+from langgraph.graph import END, StateGraph
+
+from app.core.config import RISK_FINANCIAL_KEYWORDS, SENSITIVE_FINANCIAL_KEYWORDS
 from app.core.logger import get_logger
+from app.core.settings import settings
+from app.graph.nodes import call_model, tool_node
+from app.graph.state import AgentState
 
 logger = get_logger("BUILDER_WORKFLOW")
-DB_PATH = "checkpoints.sqlite"
 
 
 class FinancialGraphManager:
@@ -21,7 +22,7 @@ class FinancialGraphManager:
         investigation logic and a conditional human gatekeeper.
         """
         if self.graph is None:
-            self.saver = AsyncSqliteSaver.from_conn_string(DB_PATH)
+            self.saver = AsyncSqliteSaver.from_conn_string(settings.DB_PATH)
             checkpointer = await self.saver.__aenter__()
 
             workflow = StateGraph(AgentState)
@@ -89,9 +90,9 @@ class FinancialGraphManager:
         # Lógica de Umbral:
         # - Si hay una palabra de ALTO riesgo -> Review.
         # - Si hay 2 o más palabras de riesgo moderado -> Review.
-        risk_score = (len(triggered_high) * 2) + len(triggered_moderate)
+        risk_score = (len(triggered_high) * settings.HIGH_RISK_MULTIPLIER) + len(triggered_moderate)
 
-        if risk_score >= 2:
+        if risk_score >= settings.RISK_SCORE_THRESHOLD:
             logger.info(
                 f"🚨 BREAKPOINT TRIGGERED [Thread: {state.get('thread_id', 'N/A')}]\n"
                 f"Reason: High risk score ({risk_score})\n"

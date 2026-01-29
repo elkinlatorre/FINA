@@ -1,23 +1,31 @@
-import os
-import uuid
-import shutil
 import datetime
+import os
+import shutil
+import uuid
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
-from app.schemas.approval_request import ApprovalRequest
 from app.core.config import VALID_SUPERVISORS
-from app.service.mcp_client import MCPClient
-from langchain_core.messages import HumanMessage
-from app.graph.builder import graph_manager
-from app.service.ingestion_service import IngestionService
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from app.core.exceptions import (
+    AuthorizationError,
+    ConflictOfInterestError,
+    ThreadNotFoundError,
+    ValidationError,
+)
 from app.core.logger import get_logger
+from app.core.settings import settings
+from app.graph.builder import graph_manager
+from app.schemas.approval_request import ApprovalRequest
+from app.service.ingestion_service import IngestionService
+from app.service.mcp_client import MCPClient
 
-# Configuración
+# Configuration
 logger = get_logger("API_ROUTES")
 router = APIRouter()
 
-# Inicialización de servicios (se pueden inyectar o instanciar aquí)
+# Service initialization
 mcp_client = MCPClient()
 ingest_service = IngestionService()
 
@@ -80,28 +88,23 @@ async def approve_endpoint(request: ApprovalRequest):
     graph = graph_manager.graph
 
     try:
-        # 1. Recuperamos el estado actual desde la persistencia física
         snapshot = await graph.aget_state(config)
         if not snapshot.values:
-            raise HTTPException(status_code=404, detail="Thread not found.")
+            raise ThreadNotFoundError(request.thread_id)
 
         # --- VALIDACIÓN I: SUPERVISOR AUTORIZADO (Gobernanza) ---
         if request.supervisor_id not in VALID_SUPERVISORS:
             logger.warning(f"Unauthorized supervisor access: {request.supervisor_id}")
-            raise HTTPException(status_code=401, detail="Invalid Supervisor credentials.")
+            raise AuthorizationError("Invalid Supervisor credentials")
 
-        # --- VALIDACIÓN II: SEGREGACIÓN DE FUNCIONES (Compliance) ---
         if request.user_id == request.supervisor_id:
-            raise HTTPException(
-                status_code=403,
-                detail="Conflict of Interest: Creator and Approver must be different."
-            )
+            raise ConflictOfInterestError()
 
         # --- VALIDACIÓN III: SCOPE DEL USUARIO (Seguridad) ---
         stored_user_id = snapshot.values.get("user_id")
         if stored_user_id and stored_user_id != request.user_id:
             logger.error(f"Access violation: {request.user_id} vs {stored_user_id}")
-            raise HTTPException(status_code=403, detail="Security Violation: Scope mismatch.")
+            raise AuthorizationError("Security Violation: Scope mismatch")
 
         # --- VALIDACIÓN IV: IDEMPOTENCIA ---
         existing_decision = snapshot.values.get("final_decision")
@@ -184,7 +187,7 @@ async def get_chat_status(thread_id: str):
         snapshot = await graph.aget_state(config)
 
         if not snapshot.values:
-            raise HTTPException(status_code=404, detail="Thread ID not found.")
+            raise ThreadNotFoundError(thread_id)
 
         # Extraemos los datos relevantes para el auditor/usuario
         messages = snapshot.values.get("messages", [])
@@ -231,7 +234,7 @@ async def health_check():
 async def upload_pdf(file: UploadFile = File(...)):
     """Recibe y procesa un PDF para alimentar la base de datos vectorial."""
     if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
+        raise ValidationError("Only PDF files are allowed")
 
     os.makedirs("data", exist_ok=True)
     temp_path = f"data/temp_{file.filename}"
@@ -251,7 +254,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         }
     except Exception as e:
         logger.error(f"Ingestion error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
