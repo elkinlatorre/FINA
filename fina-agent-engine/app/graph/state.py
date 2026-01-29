@@ -14,3 +14,6 @@ class AgentState(TypedDict):
     # New field to control the flow
     # Options: None (in process), "approved", "rejected"
     final_decision: Optional[str]
+    user_id: str #thread owner
+    decision_by: Optional[str]  # Who aprove/reject
+    decision_at: Optional[str]  # decision Timestamp

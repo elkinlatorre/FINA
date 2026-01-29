@@ -1,9 +1,11 @@
 import os
 import uuid
 import shutil
+import datetime
 from pydantic import BaseModel
 
 from app.schemas.approval_request import ApprovalRequest
+from app.core.config import VALID_SUPERVISORS
 from app.service.mcp_client import MCPClient
 from langchain_core.messages import HumanMessage
 from app.graph.builder import graph_manager
@@ -40,7 +42,8 @@ async def chat_endpoint(request: ChatRequest):
     try:
         # Inicializamos el estado del grafo con el mensaje del usuario
         initial_state = {
-            "messages": [HumanMessage(content=request.message)]
+            "messages": [HumanMessage(content=request.message)],
+            "user_id": request.user_id # <-- this is the scope owner
         }
 
         # Ejecutamos el grafo (Fase 2 completa)
@@ -71,61 +74,101 @@ async def chat_endpoint(request: ChatRequest):
 @router.post("/approve", tags=["Financial Agent"])
 async def approve_endpoint(request: ApprovalRequest):
     """
-    HITL Endpoint: Approves, edits, or rejects a pending financial recommendation.
+    HITL Endpoint: Final version with Segregation of Duties and Audit Traceability.
     """
     config = {"configurable": {"thread_id": request.thread_id}}
     graph = graph_manager.graph
 
     try:
-        # 1. Recuperamos el estado actual desde SQLite
+        # 1. Recuperamos el estado actual desde la persistencia física
         snapshot = await graph.aget_state(config)
+        if not snapshot.values:
+            raise HTTPException(status_code=404, detail="Thread not found.")
 
-        # If a final decision already exists, we block reprocessing.
+        # --- VALIDACIÓN I: SUPERVISOR AUTORIZADO (Gobernanza) ---
+        if request.supervisor_id not in VALID_SUPERVISORS:
+            logger.warning(f"Unauthorized supervisor access: {request.supervisor_id}")
+            raise HTTPException(status_code=401, detail="Invalid Supervisor credentials.")
+
+        # --- VALIDACIÓN II: SEGREGACIÓN DE FUNCIONES (Compliance) ---
+        if request.user_id == request.supervisor_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Conflict of Interest: Creator and Approver must be different."
+            )
+
+        # --- VALIDACIÓN III: SCOPE DEL USUARIO (Seguridad) ---
+        stored_user_id = snapshot.values.get("user_id")
+        if stored_user_id and stored_user_id != request.user_id:
+            logger.error(f"Access violation: {request.user_id} vs {stored_user_id}")
+            raise HTTPException(status_code=403, detail="Security Violation: Scope mismatch.")
+
+        # --- VALIDACIÓN IV: IDEMPOTENCIA ---
         existing_decision = snapshot.values.get("final_decision")
         if existing_decision in ["approved", "rejected"]:
             return {
                 "status": "already_processed",
-                "message": f"This thread has already been {existing_decision}.",
-                "thread_id": request.thread_id,
-                "final_decision": existing_decision
+                "message": f"This thread was already finalized as: {existing_decision}",
+                "thread_id": request.thread_id
             }
 
+        # 2. Verificación de estado de pausa
         if not snapshot.next:
             raise HTTPException(status_code=400, detail="No pending review found for this thread.")
 
+        # --- PROCESAMIENTO Y AUDITORÍA ---
         decision = "approved" if request.approve else "rejected"
-        await graph.aupdate_state(config, {"final_decision": decision})
+        audit_data = {
+            "final_decision": decision,
+            "decision_by": request.supervisor_id,  # Auditoría: Quién lo hizo
+            "requested_by": request.user_id,  # Auditoría: Quién lo pidió
+            "decision_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+
+        # Sellar la decisión en SQLite antes de continuar
+        await graph.aupdate_state(config, audit_data)
 
         if request.approve:
-            # Lógica de edición (opcional)
+            # Lógica de edición si el supervisor corrigió a la IA
             if request.edited_response:
                 current_messages = list(snapshot.values["messages"])
                 current_messages[-1].content = request.edited_response
                 await graph.aupdate_state(config, {"messages": current_messages})
+                logger.info(f"Thread {request.thread_id} edited by Supervisor {request.supervisor_id}")
 
+            # Reanudar para finalizar el flujo
             final_state = await graph.ainvoke(None, config=config)
             return {
                 "status": "approved",
                 "thread_id": request.thread_id,
+                "auditor": VALID_SUPERVISORS[request.supervisor_id],
+                "decision_at": audit_data["decision_at"],
                 "response": final_state["messages"][-1].content
             }
+
         else:
-            # Feedback del rechazo (Punto 1 ya implementado)
+            # Inyectar Feedback de Rechazo
             feedback_message = HumanMessage(
-                content="REJECTED: Your previous recommendation was not authorized. Provide an alternative."
+                content="REJECTED BY SUPERVISOR: The previous recommendation is not authorized. Provide an alternative."
             )
             await graph.aupdate_state(config, {"messages": [feedback_message]})
 
+            # Reanudar para que la IA genere una alternativa
             final_state = await graph.ainvoke(None, config=config)
             return {
                 "status": "rejected",
                 "thread_id": request.thread_id,
-                "message": "The agent has been notified of the rejection.",
+                "auditor": VALID_SUPERVISORS[request.supervisor_id],
+                "decision_at": audit_data["decision_at"],
+                "message": "Rejection feedback sent to agent.",
                 "new_agent_response": final_state["messages"][-1].content
             }
+
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        logger.error(f"Error during approval: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Critical error in approve_endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal Governance Error.")
 
 
 @router.get("/chat/{thread_id}", tags=["Financial Agent"])
