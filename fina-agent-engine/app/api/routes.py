@@ -1,238 +1,203 @@
-import datetime
 import os
 import shutil
-import uuid
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from langchain_core.messages import HumanMessage
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.core.config import VALID_SUPERVISORS
-from app.core.exceptions import (
-    AuthorizationError,
-    ConflictOfInterestError,
-    ThreadNotFoundError,
-    ValidationError,
+from app.core.dependencies import (
+    ApprovalServiceDep,
+    ChatServiceDep,
+    IngestionServiceDep,
+    MCPClientDep,
+    ThreadServiceDep,
 )
+from app.core.exceptions import FinaAgentException, ValidationError
 from app.core.logger import get_logger
-from app.core.settings import settings
-from app.graph.builder import graph_manager
 from app.schemas.approval_request import ApprovalRequest
-from app.service.ingestion_service import IngestionService
-from app.service.mcp_client import MCPClient
+from app.schemas.responses import (
+    ApprovalResponse,
+    ChatResponse,
+    HealthResponse,
+    IngestionResponse,
+    ThreadStatusResponse,
+)
 
 # Configuration
 logger = get_logger("API_ROUTES")
 router = APIRouter()
 
-# Service initialization
-mcp_client = MCPClient()
-ingest_service = IngestionService()
+
 
 
 # --- Esquema para el Chat ---
 class ChatRequest(BaseModel):
-    message: str
-    user_id: str = "user123"
+    """Request schema for chat endpoint."""
+    
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+        description="User's query or message"
+    )
+    user_id: str = Field(
+        default="user123",
+        min_length=1,
+        max_length=100,
+        description="User identifier (scope owner)"
+    )
 
 
-@router.post("/chat", tags=["Financial Agent"])
-async def chat_endpoint(request: ChatRequest):
-    """
-    Financial Advisor Chat: Orchestrates reasoning between PDF (RAG)
+@router.post("/chat", response_model=ChatResponse, tags=["Financial Agent"])
+async def chat_endpoint(
+    request: ChatRequest,
+    chat_service: ChatServiceDep
+) -> ChatResponse:
+    """Financial Advisor Chat: Orchestrates reasoning between PDF (RAG)
     and Private Vault (MCP) using a ReAct cycle.
+    
+    Args:
+        request: Chat request with message and user_id
+        chat_service: Injected ChatService dependency
+        
+    Returns:
+        ChatResponse with status and content
+        
+    Raises:
+        HTTPException: If graph execution fails
     """
     logger.info(f"Received query from {request.user_id}: {request.message}")
-    generated_thread_id = str(uuid.uuid4())
-    config = {"configurable": {"thread_id": generated_thread_id}}
-    graph = graph_manager.graph
-
+    
     try:
-        # Inicializamos el estado del grafo con el mensaje del usuario
-        initial_state = {
-            "messages": [HumanMessage(content=request.message)],
-            "user_id": request.user_id # <-- this is the scope owner
-        }
-
-        # Ejecutamos el grafo (Fase 2 completa)
-        # Esto disparará el ciclo: Agent -> Tools -> Agent -> END
-        final_state = await graph.ainvoke(initial_state,config=config)
-        snapshot = await graph.aget_state(config)
-
-        if snapshot.next:
-            return {
-                "status": "pending_review",
-                "user_id": request.user_id,
-                "thread_id": generated_thread_id,
-                "message": "Your request involves a financial recommendation and is pending human approval.",
-                "preview": final_state["messages"][-1].content
-            }
-
-        return {
-            "status": "success",
-            "user_id": request.user_id,
-            "thread_id": generated_thread_id,
-            "response": final_state["messages"][-1].content
-        }
+        return await chat_service.process_chat(
+            message=request.message,
+            user_id=request.user_id
+        )
     except Exception as e:
         logger.error(f"Error in Graph Execution: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Agent Reasoning Error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Agent Reasoning Error: {str(e)}"
+        )
 
 
-@router.post("/approve", tags=["Financial Agent"])
-async def approve_endpoint(request: ApprovalRequest):
+
+@router.post("/approve", response_model=ApprovalResponse, tags=["Financial Agent"])
+async def approve_endpoint(
+    request: ApprovalRequest,
+    approval_service: ApprovalServiceDep
+) -> ApprovalResponse:
+    """HITL Endpoint: Handles approval/rejection of financial recommendations.
+    
+    Implements:
+    - Supervisor authorization validation
+    - Segregation of duties enforcement
+    - Scope verification (user ID matching)
+    - Idempotency protection
+    - Complete audit trail creation
+    
+    Args:
+        request: Approval request with decision details
+        approval_service: Injected ApprovalService dependency
+        
+    Returns:
+        ApprovalResponse with decision result
+        
+    Raises:
+        HTTPException: On validation or processing errors
     """
-    HITL Endpoint: Final version with Segregation of Duties and Audit Traceability.
-    """
-    config = {"configurable": {"thread_id": request.thread_id}}
-    graph = graph_manager.graph
-
     try:
-        snapshot = await graph.aget_state(config)
-        if not snapshot.values:
-            raise ThreadNotFoundError(request.thread_id)
-
-        # --- VALIDACIÓN I: SUPERVISOR AUTORIZADO (Gobernanza) ---
-        if request.supervisor_id not in VALID_SUPERVISORS:
-            logger.warning(f"Unauthorized supervisor access: {request.supervisor_id}")
-            raise AuthorizationError("Invalid Supervisor credentials")
-
-        if request.user_id == request.supervisor_id:
-            raise ConflictOfInterestError()
-
-        # --- VALIDACIÓN III: SCOPE DEL USUARIO (Seguridad) ---
-        stored_user_id = snapshot.values.get("user_id")
-        if stored_user_id and stored_user_id != request.user_id:
-            logger.error(f"Access violation: {request.user_id} vs {stored_user_id}")
-            raise AuthorizationError("Security Violation: Scope mismatch")
-
-        # --- VALIDACIÓN IV: IDEMPOTENCIA ---
-        existing_decision = snapshot.values.get("final_decision")
-        if existing_decision in ["approved", "rejected"]:
-            return {
-                "status": "already_processed",
-                "message": f"This thread was already finalized as: {existing_decision}",
-                "thread_id": request.thread_id
-            }
-
-        # 2. Verificación de estado de pausa
-        if not snapshot.next:
-            raise HTTPException(status_code=400, detail="No pending review found for this thread.")
-
-        # --- PROCESAMIENTO Y AUDITORÍA ---
-        decision = "approved" if request.approve else "rejected"
-        audit_data = {
-            "final_decision": decision,
-            "decision_by": request.supervisor_id,  # Auditoría: Quién lo hizo
-            "requested_by": request.user_id,  # Auditoría: Quién lo pidió
-            "decision_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
-        }
-
-        # Sellar la decisión en SQLite antes de continuar
-        await graph.aupdate_state(config, audit_data)
-
-        if request.approve:
-            # Lógica de edición si el supervisor corrigió a la IA
-            if request.edited_response:
-                current_messages = list(snapshot.values["messages"])
-                current_messages[-1].content = request.edited_response
-                await graph.aupdate_state(config, {"messages": current_messages})
-                logger.info(f"Thread {request.thread_id} edited by Supervisor {request.supervisor_id}")
-
-            # Reanudar para finalizar el flujo
-            final_state = await graph.ainvoke(None, config=config)
-            return {
-                "status": "approved",
-                "thread_id": request.thread_id,
-                "auditor": VALID_SUPERVISORS[request.supervisor_id],
-                "decision_at": audit_data["decision_at"],
-                "response": final_state["messages"][-1].content
-            }
-
-        else:
-            # Inyectar Feedback de Rechazo
-            feedback_message = HumanMessage(
-                content="REJECTED BY SUPERVISOR: The previous recommendation is not authorized. Provide an alternative."
-            )
-            await graph.aupdate_state(config, {"messages": [feedback_message]})
-
-            # Reanudar para que la IA genere una alternativa
-            final_state = await graph.ainvoke(None, config=config)
-            return {
-                "status": "rejected",
-                "thread_id": request.thread_id,
-                "auditor": VALID_SUPERVISORS[request.supervisor_id],
-                "decision_at": audit_data["decision_at"],
-                "message": "Rejection feedback sent to agent.",
-                "new_agent_response": final_state["messages"][-1].content
-            }
-
-    except HTTPException as he:
-        raise he
+        return await approval_service.process_approval(request)
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is
+        raise
+    except FinaAgentException as e:
+        # Convert custom exceptions to HTTP responses
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
         logger.error(f"Critical error in approve_endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal Governance Error.")
 
 
-@router.get("/chat/{thread_id}", tags=["Financial Agent"])
-async def get_chat_status(thread_id: str):
-    """
-    Audit Endpoint: Retrieves the full history and final decision for a specific thread.
-    """
-    config = {"configurable": {"thread_id": thread_id}}
-    graph = graph_manager.graph
 
+@router.get("/chat/{thread_id}", response_model=ThreadStatusResponse, tags=["Financial Agent"])
+async def get_chat_status(
+    thread_id: str,
+    thread_service: ThreadServiceDep
+) -> ThreadStatusResponse:
+    """Audit Endpoint: Retrieves the full history and final decision for a specific thread.
+    
+    Provides complete transparency for auditing and compliance purposes.
+    
+    Args:
+        thread_id: Unique thread identifier
+        thread_service: Injected ThreadService dependency
+        
+    Returns:
+        ThreadStatusResponse with complete thread information
+        
+    Raises:
+        HTTPException: If thread not found or retrieval fails
+    """
     try:
-        # Recuperamos el estado actual de la base de datos física
-        snapshot = await graph.aget_state(config)
-
-        if not snapshot.values:
-            raise ThreadNotFoundError(thread_id)
-
-        # Extraemos los datos relevantes para el auditor/usuario
-        messages = snapshot.values.get("messages", [])
-        decision = snapshot.values.get("final_decision", "pending")
-
-        # Formateamos el historial de forma legible
-        history = [
-            {
-                "role": msg.type,  # 'human' or 'ai'
-                "content": msg.content
-            }
-            for msg in messages
-        ]
-
-        return {
-            "thread_id": thread_id,
-            "status": "completed" if not snapshot.next else "pending_review",
-            "final_decision": decision,
-            "history_count": len(history),
-            "full_history": history
-        }
-
+        return await thread_service.get_thread_status(thread_id)
+    except FinaAgentException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
     except Exception as e:
         logger.error(f"Error retrieving audit log: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/health", tags=["System"])
-async def health_check():
-    """Verifica el estado de salud del Nodo A y su conexión con el Nodo B."""
+
+@router.get("/health", response_model=HealthResponse, tags=["System"])
+async def health_check(mcp_client: MCPClientDep) -> HealthResponse:
+    """Health check endpoint: Verifies Node A status and Node B (MCP) connectivity.
+    
+    Returns comprehensive system health information including:
+    - Node A operational status
+    - MCP server connectivity (Node B)
+    - API key configuration validation
+    - Vector database status
+    
+    Args:
+        mcp_client: Injected MCPClient dependency
+        
+    Returns:
+        HealthResponse with system health details
+    """
     mcp_status = await mcp_client.check_connection()
-    return {
-        "status": "online",
-        "node_a": "healthy",
-        "node_b_connected": mcp_status,
-        "api_keys_set": {
+    return HealthResponse(
+        status="online",
+        node_a="healthy",
+        node_b_connected=mcp_status,
+        api_keys_set={
             "groq": bool(os.getenv("GROQ_API_KEY")),
             "huggingface": bool(os.getenv("HUGGINGFACEHUB_API_TOKEN"))
         },
-        "vector_db": "exists" if os.path.exists("data/vector_db") else "empty"
-    }
+        vector_db="exists" if os.path.exists("data/vector_db") else "empty"
+    )
 
 
-@router.post("/ingest", tags=["Data Ingestion"])
-async def upload_pdf(file: UploadFile = File(...)):
-    """Recibe y procesa un PDF para alimentar la base de datos vectorial."""
+
+@router.post("/ingest", response_model=IngestionResponse, tags=["Data Ingestion"])
+async def upload_pdf(
+    file: UploadFile = File(...),
+    ingest_service: IngestionServiceDep = None
+) -> IngestionResponse:
+    """PDF Ingestion Endpoint: Processes PDF files for vector database storage.
+    
+    Validates file type, processes the PDF into chunks, and stores
+    in the vector database for RAG retrieval.
+    
+    Args:
+        file: Uploaded PDF file
+        ingest_service: Injected IngestionService dependency
+        
+    Returns:
+        IngestionResponse with processing results
+        
+    Raises:
+        ValidationError: If file is not a PDF
+        HTTPException: On processing errors
+    """
     if not file.filename.lower().endswith(".pdf"):
         raise ValidationError("Only PDF files are allowed")
 
@@ -243,18 +208,20 @@ async def upload_pdf(file: UploadFile = File(...)):
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Procesa el PDF
+        # Process the PDF
         chunks = await ingest_service.process_pdf(temp_path)
 
-        return {
-            "status": "success",
-            "filename": file.filename,
-            "chunks_processed": chunks,
-            "storage_mode": "Cloud API (Zero Disk Impact)"
-        }
+        return IngestionResponse(
+            status="success",
+            filename=file.filename,
+            chunks_processed=chunks,
+            storage_mode="Cloud API (Zero Disk Impact)"
+        )
+    except ValidationError:
+        raise
     except Exception as e:
         logger.error(f"Ingestion error: {e}")
-        raise
+        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)

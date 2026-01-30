@@ -2,7 +2,6 @@ from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, StateGraph
 
-from app.core.config import RISK_FINANCIAL_KEYWORDS, SENSITIVE_FINANCIAL_KEYWORDS
 from app.core.logger import get_logger
 from app.core.settings import settings
 from app.graph.nodes import call_model, tool_node
@@ -22,7 +21,7 @@ class FinancialGraphManager:
         investigation logic and a conditional human gatekeeper.
         """
         if self.graph is None:
-            self.saver = AsyncSqliteSaver.from_conn_string(settings.DB_PATH)
+            self.saver = AsyncSqliteSaver.from_conn_string(settings.CHECKPOINT_DB_PATH)
             checkpointer = await self.saver.__aenter__()
 
             workflow = StateGraph(AgentState)
@@ -80,9 +79,9 @@ class FinancialGraphManager:
         # Check if any sensitive keyword exists in the agent's final response
         content_lower = last_message.content.lower()
         # Palabras de alto riesgo (disparan revisión inmediata)
-        high_risk_words = RISK_FINANCIAL_KEYWORDS
+        high_risk_words = settings.RISK_FINANCIAL_KEYWORDS
         # Palabras de riesgo moderado (necesitan al menos 2 para disparar)
-        moderate_risk_words = SENSITIVE_FINANCIAL_KEYWORDS  # Las que ya tenemos en config.py
+        moderate_risk_words = settings.SENSITIVE_FINANCIAL_KEYWORDS
 
         triggered_high = [word for word in high_risk_words if f" {word} " in f" {content_lower} "]
         triggered_moderate = [word for word in moderate_risk_words if f" {word} " in f" {content_lower} "]

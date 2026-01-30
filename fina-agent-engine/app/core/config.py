@@ -1,12 +1,10 @@
-# Constants for Financial Governance
-VALID_SUPERVISORS = {
-    "SUP-9988": "Senior Portfolio Manager - Area A",
-    "SUP-1122": "Compliance Officer - Area B"
-}
+# DEPRECATED: This module is deprecated in favor of app.core.settings
+# Import from settings instead:
+# from app.core.settings import settings
 
-# Dynamic definition of keywords for governance
-SENSITIVE_FINANCIAL_KEYWORDS = [
-    "risk", "recommendation", "portfolio", "assets", "advice"
-]
+from app.core.settings import settings
 
-RISK_FINANCIAL_KEYWORDS = ["buy", "sell", "trade", "allocate", "invest"]
+# Backwards compatibility - these will be removed in future versions
+VALID_SUPERVISORS = settings.VALID_SUPERVISORS
+SENSITIVE_FINANCIAL_KEYWORDS = settings.SENSITIVE_FINANCIAL_KEYWORDS
+RISK_FINANCIAL_KEYWORDS = settings.RISK_FINANCIAL_KEYWORDS
