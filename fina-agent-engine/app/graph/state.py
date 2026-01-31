@@ -3,6 +3,15 @@ from typing import Annotated, Optional, Sequence
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
+def reduce_usage(current: dict, new: dict) -> dict:
+    """It accumulates the usage of tokens throughout the steps of the graph."""
+    if not current: current = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "estimated_cost": 0.0}
+    return {
+        "prompt_tokens": current.get("prompt_tokens", 0) + new.get("prompt_tokens", 0),
+        "completion_tokens": current.get("completion_tokens", 0) + new.get("completion_tokens", 0),
+        "total_tokens": current.get("total_tokens", 0) + new.get("total_tokens", 0),
+        "estimated_cost": current.get("estimated_cost", 0.0) + new.get("estimated_cost", 0.0)
+    }
 
 class AgentState(dict):
     """Represents the state of our financial agent.
@@ -26,3 +35,4 @@ class AgentState(dict):
     user_id: str  # thread owner
     decision_by: Optional[str] = None  # Who approved/rejected
     decision_at: Optional[str] = None  # decision Timestamp
+    usage: Annotated[dict, reduce_usage]

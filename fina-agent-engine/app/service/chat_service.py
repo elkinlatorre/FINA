@@ -98,7 +98,9 @@ class ChatService:
         # Execute agent graph (ReAct cycle: Agent -> Tools -> Agent -> END)
         final_state = await graph.ainvoke(initial_state, config=config)
         snapshot = await graph.aget_state(config)
-        
+
+        usage_data = final_state.get("usage")
+
         # Determine if human review is needed
         if snapshot.next:
             # Agent requires human review (financial recommendation detected)
@@ -107,7 +109,8 @@ class ChatService:
                 user_id=user_id,
                 thread_id=thread_id,
                 message="Your request involves a financial recommendation and is pending human approval.",
-                preview=final_state["messages"][-1].content
+                preview=final_state["messages"][-1].content,
+                usage=usage_data
             )
         
         # Direct response (informational query)
@@ -115,5 +118,6 @@ class ChatService:
             status="success",
             user_id=user_id,
             thread_id=thread_id,
-            response=final_state["messages"][-1].content
+            response=final_state["messages"][-1].content,
+            usage=usage_data
         )

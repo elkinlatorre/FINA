@@ -8,6 +8,11 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+class UsageStats(BaseModel):
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    estimated_cost: float
 
 class ChatResponse(BaseModel):
     """Response from chat endpoint."""
@@ -18,6 +23,7 @@ class ChatResponse(BaseModel):
     message: Optional[str] = Field(None, description="Status message for pending reviews")
     response: Optional[str] = Field(None, description="Agent's final response")
     preview: Optional[str] = Field(None, description="Preview of pending response")
+    usage: Optional[UsageStats] = Field(None, description="Usage statistics")
 
 
 class ApprovalResponse(BaseModel):
@@ -40,6 +46,7 @@ class ThreadStatusResponse(BaseModel):
     final_decision: str = Field(..., description="Decision: 'approved', 'rejected', or 'pending'")
     history_count: int = Field(..., description="Number of messages in conversation")
     full_history: list[dict] = Field(..., description="Complete message history")
+    usage: Optional[UsageStats] = Field(None, description="Usage statistics")
 
 
 class HealthResponse(BaseModel):

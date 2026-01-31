@@ -39,8 +39,25 @@ async def call_model(state: AgentState) -> dict:
 
     response = await llm.ainvoke(messages)
 
+    #Tokens metadata extraction
+    meta = response.response_metadata.get("token_usage", {})
+    prompt_tokens = meta.get("prompt_tokens", 0)
+    completion_tokens = meta.get("completion_tokens", 0)
+    cost = (
+            (prompt_tokens * settings.PRICE_1K_PROMPT) / 1000 +
+            (completion_tokens * settings.PRICE_1K_COMPLETION) / 1000
+    )
+
     # Return message to update graph state
-    return {"messages": [response]}
+    return {
+        "messages": [response],
+        "usage": {
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": meta.get("total_tokens", 0),
+            "estimated_cost": cost
+        }
+    }
 
 
 # Setup the Tools Node

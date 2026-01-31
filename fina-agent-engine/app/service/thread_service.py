@@ -51,7 +51,8 @@ class ThreadService:
         # Extract relevant data
         messages = snapshot.values.get("messages", [])
         decision = snapshot.values.get("final_decision", "pending")
-        
+        usage_data = snapshot.values.get("usage", {})
+
         # Format message history
         history = [
             {
@@ -69,5 +70,6 @@ class ThreadService:
             status=status,
             final_decision=decision,
             history_count=len(history),
-            full_history=history
+            full_history=history,
+            usage=usage_data
         )

@@ -47,7 +47,9 @@ class Settings:
     # LLM Configuration
     LLM_MODEL: str = "llama-3.3-70b-versatile"
     LLM_TEMPERATURE: float = 0.0
-    
+    PRICE_1K_PROMPT: float = 0.00059
+    PRICE_1K_COMPLETION: float = 0.00079
+
     # Embedding Model configuration
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     HUGGINGFACEHUB_API_TOKEN: str = os.getenv("HUGGINGFACEHUB_API_TOKEN", "")
