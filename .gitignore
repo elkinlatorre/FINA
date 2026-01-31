@@ -22,3 +22,12 @@
 # --- OS específicos ---
 .DS_Store
 Thumbs.db
+
+# Unit tests / Coverage reports
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+nosetests.xml
+tox/
+.pytest_cache/
