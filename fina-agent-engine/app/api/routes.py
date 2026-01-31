@@ -2,7 +2,6 @@ import os
 import shutil
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from pydantic import BaseModel, Field
 
 from app.core.dependencies import (
     ApprovalServiceDep,
@@ -14,6 +13,7 @@ from app.core.dependencies import (
 from app.core.exceptions import FinaAgentException, ValidationError
 from app.core.logger import get_logger
 from app.schemas.approval_request import ApprovalRequest
+from app.schemas.requests import ChatRequest
 from app.schemas.responses import (
     ApprovalResponse,
     ChatResponse,
@@ -25,27 +25,6 @@ from app.schemas.responses import (
 # Configuration
 logger = get_logger("API_ROUTES")
 router = APIRouter()
-
-
-
-
-# --- Esquema para el Chat ---
-class ChatRequest(BaseModel):
-    """Request schema for chat endpoint."""
-    
-    message: str = Field(
-        ...,
-        min_length=1,
-        max_length=10000,
-        description="User's query or message"
-    )
-    user_id: str = Field(
-        default="user123",
-        min_length=1,
-        max_length=100,
-        description="User identifier (scope owner)"
-    )
-
 
 @router.post("/chat", response_model=ChatResponse, tags=["Financial Agent"])
 async def chat_endpoint(
