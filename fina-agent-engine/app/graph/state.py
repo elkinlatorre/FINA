@@ -1,4 +1,4 @@
-from typing import Annotated, Optional, Sequence
+from typing import Annotated, Optional, Sequence, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
@@ -13,7 +13,7 @@ def reduce_usage(current: dict, new: dict) -> dict:
         "estimated_cost": current.get("estimated_cost", 0.0) + new.get("estimated_cost", 0.0)
     }
 
-class AgentState(dict):
+class AgentState(TypedDict):
     """Represents the state of our financial agent.
     
     It keeps track of the conversation history, decision status,

@@ -66,3 +66,9 @@ class IngestionResponse(BaseModel):
     filename: str = Field(..., description="Name of processed file")
     chunks_processed: int = Field(..., description="Number of chunks created")
     storage_mode: str = Field(..., description="Storage mode description")
+
+class StreamEvent(BaseModel):
+    type: str # 'token', 'tool', or 'final'
+    content: Optional[str] = None
+    tool: Optional[str] = None
+    # If type is 'final', it would include usage, thread_id, etc.

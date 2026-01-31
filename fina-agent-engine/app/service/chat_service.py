@@ -5,11 +5,12 @@ Separates business logic from the API layer for better testability and reusabili
 """
 
 import uuid
-from typing import Optional
+import json
 
 from langchain_core.messages import HumanMessage
-
+from typing import AsyncGenerator, Optional
 from app.core.logger import get_logger
+from app.core.settings import settings
 from app.graph.builder import FinancialGraphManager
 from app.schemas.responses import ChatResponse
 
@@ -121,3 +122,44 @@ class ChatService:
             response=final_state["messages"][-1].content,
             usage=usage_data
         )
+
+    async def process_chat_stream(self, message: str, user_id: str) -> AsyncGenerator[str, None]:
+        thread_id = self._generate_thread_id()
+        config = self._build_config(thread_id)
+        graph = self.graph_manager.graph
+        initial_state = self._build_initial_state(message, user_id)
+
+        # 1. Ejecución del Stream
+        async for event in graph.astream_events(initial_state, config=config, version="v2"):
+            kind = event["event"]
+            node_name = event.get("metadata", {}).get("langgraph_node")
+
+            if kind == "on_chat_model_end" and node_name == "agent":
+                content = event["data"]["output"].content
+                if content:
+                    yield f"data: {json.dumps({'type': 'answer', 'content': content})}\n\n"
+
+            elif kind == "on_tool_start":
+                yield f"data: {json.dumps({'type': 'tool', 'tool': event['name']})}\n\n"
+
+        # --- CRITICAL FIX FOR US4.1 ---
+        # 2. Pequeña pausa asíncrona para permitir que el checkpoint se consolide
+        import asyncio
+        await asyncio.sleep(0.1)
+
+        # 3. Recuperar el estado REAL desde el checkpointer de SQLite
+        # Esto garantiza que leamos lo que el Reducer sumó en cada paso del nodo 'agent'
+        snapshot = await graph.aget_state(config)
+        final_state = snapshot.values
+
+        # Extraemos el uso acumulado (que ahora sí debería estar presente)
+        usage = final_state.get("usage", {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "estimated_cost": 0.0
+        })
+
+        yield f"data: {json.dumps({
+            'type': 'final',
+            'status': 'pending_review' if snapshot.next else 'success',
+            'thread_id': thread_id,
+            'usage': usage
+        })}\n\n"

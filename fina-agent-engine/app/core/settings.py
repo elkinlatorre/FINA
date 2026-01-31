@@ -45,7 +45,7 @@ class Settings:
     MCP_PORT: int = 8001
     
     # LLM Configuration
-    LLM_MODEL: str = "llama-3.3-70b-versatile"
+    LLM_MODEL: str = "llama-3.1-8b-instant" #"llama-3.3-70b-versatile"
     LLM_TEMPERATURE: float = 0.0
     PRICE_1K_PROMPT: float = 0.00059
     PRICE_1K_COMPLETION: float = 0.00079

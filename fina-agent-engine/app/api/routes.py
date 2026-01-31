@@ -2,6 +2,7 @@ import os
 import shutil
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 
 from app.core.dependencies import (
     ApprovalServiceDep,
@@ -59,6 +60,23 @@ async def chat_endpoint(
         )
 
 
+@router.post("/chat/stream", tags=["Financial Agent"])
+async def chat_stream_endpoint(
+        request: ChatRequest,
+        chat_service: ChatServiceDep
+):
+    """
+    US4.2 Streaming Endpoint: Returns a Server-Sent Events (SSE) stream.
+    """
+    logger.info(f"Stream request from {request.user_id}")
+
+    return StreamingResponse(
+        chat_service.process_chat_stream(
+            message=request.message,
+            user_id=request.user_id
+        ),
+        media_type="text/event-stream"
+    )
 
 @router.post("/approve", response_model=ApprovalResponse, tags=["Financial Agent"])
 async def approve_endpoint(
