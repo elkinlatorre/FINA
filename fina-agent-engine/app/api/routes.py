@@ -66,7 +66,7 @@ async def chat_stream_endpoint(
         chat_service: ChatServiceDep
 ):
     """
-    US4.2 Streaming Endpoint: Returns a Server-Sent Events (SSE) stream.
+    Streaming Endpoint: Returns a Server-Sent Events (SSE) stream.
     """
     logger.info(f"Stream request from {request.user_id}")
 

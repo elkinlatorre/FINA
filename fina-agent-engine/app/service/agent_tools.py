@@ -3,7 +3,6 @@ from app.service.mcp_client import MCPClient
 from app.service.ingestion_service import IngestionService
 from app.schemas.agent_schemas import PortfolioSchema, SearchSchema
 
-# Instancias de servicios
 mcp_client = MCPClient()
 ingest_service = IngestionService()
 
@@ -23,5 +22,4 @@ async def search_financial_docs(query: str):
     """
     return await ingest_service.search_in_vector_db(query)
 
-# Exportamos la lista para que el Grafo (Fase 2) las vea fácilmente
 FINA_TOOLS = [get_user_portfolio, search_financial_docs]

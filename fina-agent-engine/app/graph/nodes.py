@@ -31,24 +31,20 @@ async def call_model(state: AgentState) -> dict:
     # In streaming mode, 'ainvoke' should reconstruct the full message and metadata
     response = await llm.ainvoke(messages)
 
-    # --- US4.1: ROBUST TOKEN EXTRACTION ---
+    # --- ROBUST TOKEN EXTRACTION ---
     # 1. Try standardized 'usage_metadata' (preferred in latest LangChain versions)
     usage = getattr(response, "usage_metadata", {})
-
     # 2. Fallback to response_metadata dicts
     if not usage:
         usage = response.response_metadata.get("token_usage") or response.response_metadata.get("usage") or {}
-
     prompt_tokens = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
     completion_tokens = usage.get("output_tokens") or usage.get("completion_tokens") or 0
-
     # 3. Emergency Heuristic Fallback (Avoids 0.0 costs if API omits metadata in stream)
     if prompt_tokens == 0 and completion_tokens == 0:
         logger.warning("⚠️ API returned zero tokens in stream mode. Applying heuristic estimation.")
         # Rough estimation: ~4 chars per token for English financial text
         prompt_tokens = sum(len(getattr(m, 'content', '')) for m in messages) // 4
         completion_tokens = len(response.content) // 4
-
     total_tokens = usage.get("total_tokens") or (prompt_tokens + completion_tokens)
 
     # Cost calculation based on settings
@@ -68,7 +64,6 @@ async def call_model(state: AgentState) -> dict:
             "estimated_cost": cost
         }
     }
-
 
 # Setup the Tools Node
 # This is a prebuilt LangGraph node that automatically executes

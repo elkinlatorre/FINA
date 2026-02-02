@@ -78,17 +78,12 @@ class FinancialGraphManager:
         # 2. Risk Evaluation Layer
         # Check if any sensitive keyword exists in the agent's final response
         content_lower = last_message.content.lower()
-        # Palabras de alto riesgo (disparan revisión inmediata)
         high_risk_words = settings.RISK_FINANCIAL_KEYWORDS
-        # Palabras de riesgo moderado (necesitan al menos 2 para disparar)
         moderate_risk_words = settings.SENSITIVE_FINANCIAL_KEYWORDS
 
         triggered_high = [word for word in high_risk_words if f" {word} " in f" {content_lower} "]
         triggered_moderate = [word for word in moderate_risk_words if f" {word} " in f" {content_lower} "]
 
-        # Lógica de Umbral:
-        # - Si hay una palabra de ALTO riesgo -> Review.
-        # - Si hay 2 o más palabras de riesgo moderado -> Review.
         risk_score = (len(triggered_high) * settings.HIGH_RISK_MULTIPLIER) + len(triggered_moderate)
 
         if risk_score >= settings.RISK_SCORE_THRESHOLD:
@@ -99,7 +94,6 @@ class FinancialGraphManager:
             )
             return "review"
 
-        # 3. Flujo Directo (Informacional)
         logger.info(f"✅ DIRECT RESPONSE: Risk score ({risk_score}) below threshold.")
         return "end"
 

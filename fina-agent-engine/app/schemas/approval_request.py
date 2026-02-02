@@ -8,7 +8,6 @@ class ApprovalRequest(BaseModel):
     
     Used for HITL (Human-In-The-Loop) governance workflow.
     """
-    
     thread_id: str = Field(
         ...,
         min_length=1,

@@ -129,7 +129,7 @@ class ChatService:
         graph = self.graph_manager.graph
         initial_state = self._build_initial_state(message, user_id)
 
-        # 1. Ejecución del Stream
+        # 1. stream execution
         async for event in graph.astream_events(initial_state, config=config, version="v2"):
             kind = event["event"]
             node_name = event.get("metadata", {}).get("langgraph_node")
@@ -142,17 +142,16 @@ class ChatService:
             elif kind == "on_tool_start":
                 yield f"data: {json.dumps({'type': 'tool', 'tool': event['name']})}\n\n"
 
-        # --- CRITICAL FIX FOR US4.1 ---
-        # 2. Pequeña pausa asíncrona para permitir que el checkpoint se consolide
+        # 2. async pause to allow checkpoint consolidation
         import asyncio
         await asyncio.sleep(0.1)
 
-        # 3. Recuperar el estado REAL desde el checkpointer de SQLite
-        # Esto garantiza que leamos lo que el Reducer sumó en cada paso del nodo 'agent'
+        # 3. Recover the REAL state from the SQLite checkpointer
+        # This ensures we read what the Reducer added in each step of the 'agent' node
         snapshot = await graph.aget_state(config)
         final_state = snapshot.values
 
-        # Extraemos el uso acumulado (que ahora sí debería estar presente)
+        # Extract accumulated usage (which should now be present)
         usage = final_state.get("usage", {
             "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "estimated_cost": 0.0
         })
