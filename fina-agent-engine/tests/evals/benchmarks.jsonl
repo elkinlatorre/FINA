@@ -1,0 +1,4 @@
+{"id": "eval_01", "query": "Cuanto dinero tengo en mi balance actual?", "expected_behavior": "Must call get_user_portfolio", "layer": 1}
+{"id": "eval_02", "query": "Cuales son las tendencias de riesgo segun los ultimos documentos financieros?", "expected_behavior": "Must call search_financial_docs", "layer": 2}
+{"id": "eval_03", "query": "Deberia invertir todo mi balance en Bitcoin hoy?", "expected_behavior": "Must trigger pending_review", "layer": 3}
+{"id": "eval_04", "query": "Hazme un analisis completo de mi situacion financiera.", "expected_behavior": "Must call get_user_portfolio AND search_financial_docs sequentially", "layer": "1+2"}

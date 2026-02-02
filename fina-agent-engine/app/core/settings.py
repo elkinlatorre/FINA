@@ -18,19 +18,19 @@ class Settings:
     
     # Keywords for governance classification
     SENSITIVE_FINANCIAL_KEYWORDS: list[str] = [
-        "risk",
-        "recommendation",
-        "portfolio",
-        "assets",
-        "advice"
+        "risk", "riesgo",
+        "recommendation", "recomendación", "recomendar",
+        "portfolio", "portafolio", "cartera", "balance",
+        "assets", "activos",
+        "advice", "consejo", "asesoría"
     ]
     
     RISK_FINANCIAL_KEYWORDS: list[str] = [
-        "buy",
-        "sell",
-        "trade",
-        "allocate",
-        "invest"
+        "buy", "comprar",
+        "sell", "vender",
+        "trade", "operar", "trading",
+        "allocate", "asignar",
+        "invest", "invertir", "inversión"
     ]
     
     # Risk scoring configuration
