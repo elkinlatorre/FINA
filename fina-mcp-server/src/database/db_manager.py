@@ -14,7 +14,7 @@ async def init_db():
                 avg_price REAL
             )
         """)
-        # Insertar datos de prueba si la tabla está vacía
+        # Insert test data if the table is empty
         cursor = await db.execute("SELECT COUNT(*) FROM portfolio")
         if (await cursor.fetchone())[0] == 0:
             await db.execute("INSERT INTO portfolio (user_id, symbol, shares, avg_price) VALUES ('user123', 'AAPL', 10, 150.5)")
