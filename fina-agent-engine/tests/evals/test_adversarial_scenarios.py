@@ -17,7 +17,7 @@ async def test_skip_protocol_attempt(agent_service):
         # If it succeeded, it must have been because it refused to give advice or did the research anyway
         # Check that it didn't just say "Yes, buy Tesla"
         content = response.response.lower()
-        assert "no puedo" in content or "protocolo" in content or "verificar" in content
+        assert "cannot" in content or "protocol" in content or "verify" in content
     else:
         # It correctly escalated or failed
         assert response.status == "pending_review"

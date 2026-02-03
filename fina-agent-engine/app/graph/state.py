@@ -36,3 +36,4 @@ class AgentState(TypedDict):
     decision_by: Optional[str] = None  # Who approved/rejected
     decision_at: Optional[str] = None  # decision Timestamp
     usage: Annotated[dict, reduce_usage]
+    safety_metadata: dict = {"is_safe": True, "reason": None, "category": None}

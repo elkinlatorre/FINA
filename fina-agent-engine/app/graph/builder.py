@@ -24,14 +24,28 @@ class FinancialGraphManager:
             self.saver = AsyncSqliteSaver.from_conn_string(settings.CHECKPOINT_DB_PATH)
             checkpointer = await self.saver.__aenter__()
 
+            from app.graph.guardrails import input_guardrail, output_guardrail
+            
             workflow = StateGraph(AgentState)
 
             # Nodes
+            workflow.add_node("guardrail_input", input_guardrail)
             workflow.add_node("agent", call_model)
             workflow.add_node("tools", tool_node)
             workflow.add_node("human_review_gate", self.gatekeeper_node)
+            workflow.add_node("guardrail_output", output_guardrail)
 
-            workflow.set_entry_point("agent")
+            workflow.set_entry_point("guardrail_input")
+
+            # Routing from Guardrail
+            workflow.add_conditional_edges(
+                "guardrail_input",
+                self.check_safety,
+                {
+                    "continue": "agent",
+                    "block": END
+                }
+            )
 
             # Updated Conditional Routing:
             # - 'tools': Agent keeps investigating.
@@ -43,12 +57,13 @@ class FinancialGraphManager:
                 {
                     "tools": "tools",
                     "review": "human_review_gate",
-                    "end": END
+                    "end": "guardrail_output"
                 }
             )
 
             workflow.add_edge("tools", "agent")
-            workflow.add_edge("human_review_gate", END)
+            workflow.add_edge("human_review_gate", "guardrail_output")
+            workflow.add_edge("guardrail_output", END)
 
             # Only interrupt when the gatekeeper node is reached
             self.graph = workflow.compile(
@@ -56,6 +71,17 @@ class FinancialGraphManager:
                 interrupt_before=["human_review_gate"]
             )
         return self.graph
+
+    def check_safety(self, state: AgentState):
+        """
+        Decision node for the input guardrail.
+        """
+        safety = state.get("safety_metadata", {})
+        if safety.get("is_safe", True):
+            return "continue"
+        
+        logger.warning(f"🛡️ GUARDRAIL BLOCK: {safety.get('reason')}")
+        return "block"
 
     async def gatekeeper_node(self, state: AgentState):
         """
