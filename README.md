@@ -125,6 +125,25 @@ docker-compose up --build
 
 ---
 
+## 🧪 Quick Start Testing Guide
+
+To test the system's full flow (Portfolio query → Investment Recommendation → Human Approval), use the following credentials:
+
+### 👤 Dummy User Data
+The local database comes pre-seeded with data for a test user. Use this ID when querying portfolios via the agent or directly through the MCP server tools.
+- **Test User ID**: `user123`
+- **Pre-loaded Assets**: `AAPL` (10 shares), `NVDA` (5 shares).
+
+### 👮 Supervisor Authorization (HITL)
+When the system pauses for **Human-In-The-Loop** review (Status: `PENDING_REVIEW`), use one of these valid supervisor codes to authorize the completion of the action:
+
+| Supervisor Code | Role | Area |
+| :--- | :--- | :--- |
+| `SUP-9988` | Senior Portfolio Manager | Area A |
+| `SUP-1122` | Compliance Officer | Area B |
+
+---
+
 ## 🧪 Development & Testing
 
 ### Unit Testing
