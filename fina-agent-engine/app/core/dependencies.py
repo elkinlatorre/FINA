@@ -61,9 +61,12 @@ def get_ingestion_service() -> IngestionService:
     return IngestionService()
 
 
+from app.service.auth_service import auth_service
+
 # Type annotations for dependency injection
 ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
 ApprovalServiceDep = Annotated[ApprovalService, Depends(get_approval_service)]
 ThreadServiceDep = Annotated[ThreadService, Depends(get_thread_service)]
 MCPClientDep = Annotated[MCPClient, Depends(get_mcp_client)]
 IngestionServiceDep = Annotated[IngestionService, Depends(get_ingestion_service)]
+CurrentUserDep = Annotated[dict, Depends(auth_service.get_current_user)]

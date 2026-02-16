@@ -1,5 +1,7 @@
 from langchain_core.messages import AIMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool
 from langgraph.graph import END, StateGraph
 
 from app.core.logger import get_logger
@@ -17,12 +19,23 @@ class FinancialGraphManager:
 
     async def initialize(self):
         """
-        Initializes the saver and compiles the graph with autonomous
-        investigation logic and a conditional human gatekeeper.
+        Initializes the saver (SQLite or Postgres) and compiles the graph.
         """
         if self.graph is None:
-            self.saver = AsyncSqliteSaver.from_conn_string(settings.CHECKPOINT_DB_PATH)
-            checkpointer = await self.saver.__aenter__()
+            # Persistence Logic: Prefer Cloud Postgres (Supabase) over Local SQLite
+            if settings.SUPABASE_DB_URL:
+                logger.info("🔗 Using Cloud Postgres (Supabase) for persistence.")
+                # We use a connection pool for better performance in production
+                self.pool = AsyncConnectionPool(conninfo=settings.SUPABASE_DB_URL, max_size=20)
+                self.saver = AsyncPostgresSaver(self.pool)
+                # Note: AsyncPostgresSaver doesn't need __aenter__ like SqliteSaver in latest versions
+                # but we need to ensure the pool is ready. The saver handles migrations.
+                await self.saver.setup() 
+                checkpointer = self.saver
+            else:
+                logger.info(f"📁 Using Local SQLite ({settings.CHECKPOINT_DB_PATH}) for persistence.")
+                self.saver = AsyncSqliteSaver.from_conn_string(settings.CHECKPOINT_DB_PATH)
+                checkpointer = await self.saver.__aenter__()
 
             from app.graph.guardrails import input_guardrail, output_guardrail
             
@@ -124,9 +137,12 @@ class FinancialGraphManager:
         return "end"
 
     async def close(self):
-        """Closes the DB connection on app shutdown."""
+        """Closes the DB connection or pool on app shutdown."""
         if self.saver:
-            await self.saver.__aexit__(None, None, None)
+            if isinstance(self.saver, AsyncSqliteSaver):
+                await self.saver.__aexit__(None, None, None)
+            elif hasattr(self, 'pool'):
+                await self.pool.close()
 
 
 # Singleton Instance

@@ -10,6 +10,7 @@ from app.core.dependencies import (
     IngestionServiceDep,
     MCPClientDep,
     ThreadServiceDep,
+    CurrentUserDep,
 )
 from app.core.exceptions import FinaAgentException, ValidationError
 from app.core.logger import get_logger
@@ -30,27 +31,17 @@ router = APIRouter()
 @router.post("/chat", response_model=ChatResponse, tags=["Financial Agent"])
 async def chat_endpoint(
     request: ChatRequest,
-    chat_service: ChatServiceDep
+    chat_service: ChatServiceDep,
+    current_user: CurrentUserDep
 ) -> ChatResponse:
-    """Financial Advisor Chat: Orchestrates reasoning between PDF (RAG)
-    and Private Vault (MCP) using a ReAct cycle.
-    
-    Args:
-        request: Chat request with message and user_id
-        chat_service: Injected ChatService dependency
-        
-    Returns:
-        ChatResponse with status and content
-        
-    Raises:
-        HTTPException: If graph execution fails
-    """
-    logger.info(f"Received query from {request.user_id}: {request.message}")
+    # Use user_id from token, or request if matching/provided (token takes precedence)
+    user_id = current_user.get("user_id")
+    logger.info(f"Received query from authenticated user {user_id}: {request.message}")
     
     try:
         return await chat_service.process_chat(
             message=request.message,
-            user_id=request.user_id
+            user_id=user_id
         )
     except Exception as e:
         logger.error(f"Error in Graph Execution: {str(e)}")
@@ -63,17 +54,16 @@ async def chat_endpoint(
 @router.post("/chat/stream", tags=["Financial Agent"])
 async def chat_stream_endpoint(
         request: ChatRequest,
-        chat_service: ChatServiceDep
+        chat_service: ChatServiceDep,
+        current_user: CurrentUserDep
 ):
-    """
-    Streaming Endpoint: Returns a Server-Sent Events (SSE) stream.
-    """
-    logger.info(f"Stream request from {request.user_id}")
+    user_id = current_user.get("user_id")
+    logger.info(f"Stream request from authenticated user {user_id}")
 
     return StreamingResponse(
         chat_service.process_chat_stream(
             message=request.message,
-            user_id=request.user_id
+            user_id=user_id
         ),
         media_type="text/event-stream"
     )
@@ -177,8 +167,11 @@ async def health_check(mcp_client: MCPClientDep) -> HealthResponse:
 @router.post("/ingest", response_model=IngestionResponse, tags=["Data Ingestion"])
 async def upload_pdf(
     file: UploadFile = File(...),
-    ingest_service: IngestionServiceDep = None
+    ingest_service: IngestionServiceDep = None,
+    current_user: CurrentUserDep = None
 ) -> IngestionResponse:
+    user_id = current_user.get("user_id")
+    logger.info(f"File upload from user {user_id}")
     """PDF Ingestion Endpoint: Processes PDF files for vector database storage.
     
     Validates file type, processes the PDF into chunks, and stores

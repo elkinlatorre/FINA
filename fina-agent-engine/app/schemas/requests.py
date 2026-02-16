@@ -9,9 +9,9 @@ class ChatRequest(BaseModel):
         max_length=10000,
         description="User's query or message"
     )
-    user_id: str = Field(
-        default="user123",
+    user_id: Optional[str] = Field(
+        default=None,
         min_length=1,
         max_length=100,
-        description="User identifier (scope owner)"
+        description="User identifier (auto-filled from JWT if not provided)"
     )

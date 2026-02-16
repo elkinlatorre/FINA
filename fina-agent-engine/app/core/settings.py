@@ -55,6 +55,16 @@ class Settings:
     HUGGINGFACEHUB_API_TOKEN: str = os.getenv("HUGGINGFACEHUB_API_TOKEN", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     
+    # Supabase configuration
+    SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+    SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+    SUPABASE_DB_URL: str = os.getenv("SUPABASE_DB_URL", "") # PostgeSQL connection string
+
+    # Auth configuration
+    JWT_SECRET: str = os.getenv("JWT_SECRET", "super-secret-key-change-me")
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 # 24 hours
+
     # Chunking configuration
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
