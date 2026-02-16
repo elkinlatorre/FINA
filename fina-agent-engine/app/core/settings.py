@@ -91,7 +91,7 @@ class Settings:
     
     # File upload limits
     MAX_PDF_SIZE_MB: int = 50
-    ALLOWED_FILE_EXTENSIONS: list[str] = [".pdf"]
+    ALLOWED_FILE_EXTENSIONS: list[str] = [".pdf", ".txt", ".docx"]
 
 
     # Guardrail configuration

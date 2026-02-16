@@ -198,20 +198,32 @@ async def upload_pdf(
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Process the PDF
-        chunks = await ingest_service.process_pdf(temp_path)
+        # Process the PDF with user isolation
+        chunks = await ingest_service.process_pdf(temp_path, user_id)
 
         return IngestionResponse(
             status="success",
             filename=file.filename,
             chunks_processed=chunks,
-            storage_mode="Cloud API (Zero Disk Impact)"
+            storage_mode="Ephemeral Cloud RAG (Session Scoped)"
         )
     except ValidationError:
         raise
     except Exception as e:
-        logger.error(f"Ingestion error: {e}")
+        logger.error(f"Ingestion error for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
+@router.post("/auth/logout", tags=["Authentication"])
+async def logout_and_cleanup(
+    current_user: CurrentUserDep,
+    ingest_service: IngestionServiceDep
+):
+    """
+    Logout Endpoint: Cleans up all ephemeral RAG data for the user.
+    """
+    user_id = current_user.get("user_id")
+    await ingest_service.cleanup_user_data(user_id)
+    return {"status": "success", "message": "Logged out and user data cleaned up."}

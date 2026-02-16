@@ -29,21 +29,31 @@ class IngestionService:
             hasher.update(f.read())
         return hasher.hexdigest()
 
-    async def process_pdf(self, file_path: str) -> int:
-        """Process PDF file and store in vector database.
+    def _get_user_db_path(self, user_id: str) -> str:
+        """Returns the specific path for a user's vector database."""
+        return os.path.join(settings.VECTOR_DB_PATH, user_id)
+
+    async def process_pdf(self, file_path: str, user_id: str) -> int:
+        """Process PDF file and store in user-specific vector database.
         
         Args:
             file_path: Path to the PDF file
+            user_id: ID of the user owning the document
             
         Returns:
             Number of chunks processed
             
         Raises:
-            IngestionError: If PDF processing fails
+            IngestionError: If PDF processing fails or constraints are violated
         """
+        # Validate file size
+        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+        if file_size_mb > settings.MAX_PDF_SIZE_MB:
+            raise IngestionError(f"File too large ({file_size_mb:.2f}MB). Max allowed: {settings.MAX_PDF_SIZE_MB}MB")
+
         try:
             file_hash = self._calculate_hash(file_path)
-            logger.info(f"Processing PDF (Hash: {file_hash[:10]})")
+            logger.info(f"Processing PDF for user {user_id} (Hash: {file_hash[:10]})")
 
             loader = PyPDFLoader(file_path)
             docs = loader.load()
@@ -54,20 +64,22 @@ class IngestionService:
             )
             chunks = splitter.split_documents(docs)
 
-            # Save to FAISS (lightweight and fast)
+            # Save to user-specific FAISS index
+            user_db_path = self._get_user_db_path(user_id)
             vector_db = FAISS.from_documents(chunks, self.embeddings)
-            vector_db.save_local(self.db_path)
+            vector_db.save_local(user_db_path)
 
             return len(chunks)
         except Exception as e:
-            logger.error(f"PDF processing failed: {str(e)}")
+            logger.error(f"PDF processing failed for user {user_id}: {str(e)}")
             raise IngestionError(f"Failed to process PDF: {str(e)}")
 
-    async def search_in_vector_db(self, query: str, k: int = 3) -> str:
-        """Search for relevant document chunks in FAISS vector database.
+    async def search_in_vector_db(self, query: str, user_id: str, k: int = 3) -> str:
+        """Search for relevant document chunks in user-specific FAISS database.
         
         Args:
             query: Search query
+            user_id: ID of the user whose docs to search
             k: Number of results to return
             
         Returns:
@@ -76,13 +88,15 @@ class IngestionService:
         Raises:
             IngestionError: If vector database doesn't exist or search fails
         """
-        if not os.path.exists(settings.VECTOR_DB_PATH):
-            raise IngestionError("No documents uploaded to the system")
+        user_db_path = self._get_user_db_path(user_id)
+        if not os.path.exists(user_db_path):
+            logger.warning(f"Search failed: No documents found for user {user_id}")
+            return "No documents found to answer this query. Please upload a relevant financial PDF first."
 
         try:
-            # Load vector database
+            # Load user-specific vector database
             vector_db = FAISS.load_local(
-                settings.VECTOR_DB_PATH,
+                user_db_path,
                 self.embeddings,
                 allow_dangerous_deserialization=True
             )
@@ -93,5 +107,13 @@ class IngestionService:
             # Concatenate and return results
             return "\n\n".join([d.page_content for d in docs])
         except Exception as e:
-            logger.error(f"Vector search failed: {str(e)}")
+            logger.error(f"Vector search failed for user {user_id}: {str(e)}")
             raise IngestionError(f"Failed to search documents: {str(e)}")
+
+    async def cleanup_user_data(self, user_id: str):
+        """Deletes all vector data associated with a user."""
+        user_db_path = self._get_user_db_path(user_id)
+        if os.path.exists(user_db_path):
+            import shutil
+            logger.info(f"🗑️ Cleaning up ephemeral RAG data for user {user_id}")
+            shutil.rmtree(user_db_path)
