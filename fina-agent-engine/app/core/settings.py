@@ -46,6 +46,13 @@ class Settings:
     
     # LLM Configuration
     LLM_MODEL: str = "llama-3.3-70b-versatile" # upgraded from 8b for reliability
+    LLM_FALLBACK_MODELS: list[str] = [
+        "openai/gpt-oss-120b",
+        "qwen/qwen3-32b",
+        "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "openai/gpt-oss-20b",
+        "llama-3.1-8b-instant"
+    ]
     LLM_TEMPERATURE: float = 0.0
     PRICE_1K_PROMPT: float = 0.00059
     PRICE_1K_COMPLETION: float = 0.00079

@@ -34,6 +34,13 @@ const allocationData = [
 export default function PortfolioOverview() {
     return (
         <div className="portfolio-container animate-fade-in p-8 overflow-y-auto h-full">
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold">Portfolio Overview</h2>
+                <div className="demo-badge px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-yellow-400/10 text-yellow-400 border border-yellow-400/20">
+                    Simulation Dataset
+                </div>
+            </div>
+
             <div className="grid grid-cols-4 gap-6 mb-8">
                 <StatCard title="Total Value" value="$128,450" change="+12.5%" icon={<DollarSign size={20} />} />
                 <StatCard title="Active Agents" value="4" change="Running" icon={<TrendingUp size={20} />} />
@@ -109,7 +116,14 @@ export default function PortfolioOverview() {
     );
 }
 
-function StatCard({ title, value, change, icon }) {
+interface StatCardProps {
+    title: string;
+    value: string;
+    change: string;
+    icon: React.ReactNode;
+}
+
+function StatCard({ title, value, change, icon }: StatCardProps) {
     return (
         <div className="glass-panel p-6">
             <div className="flex justify-between items-start mb-4">

@@ -142,7 +142,7 @@ export default function IngestionPanel() {
 
                                     <div className="file-actions">
                                         {fileObj.status === 'idle' && (
-                                            <button onClick={() => uploadFile(idx)} className="action-btn text-primary">
+                                            <button onClick={() => uploadFile(idx)} className="action-btn" style={{ color: 'var(--primary)', opacity: 1 }}>
                                                 Upload
                                             </button>
                                         )}
@@ -150,11 +150,11 @@ export default function IngestionPanel() {
                                             <Loader2 size={18} className="animate-spin text-primary" />
                                         )}
                                         {fileObj.status === 'success' && (
-                                            <CheckCircle2 size={18} className="text-secondary" />
+                                            <CheckCircle2 size={18} style={{ color: '#10b981' }} />
                                         )}
                                         {fileObj.status === 'error' && (
                                             <div className="flex items-center group relative">
-                                                <AlertCircle size={18} className="text-red-400" />
+                                                <AlertCircle size={18} style={{ color: '#ef4444' }} />
                                                 <span className="error-tooltip">{fileObj.error}</span>
                                             </div>
                                         )}

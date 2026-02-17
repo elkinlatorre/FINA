@@ -135,15 +135,22 @@ class ChatService:
         graph = self.graph_manager.graph
         initial_state = self._build_initial_state(message, user_id)
 
+        has_yielded_content = False
         # 1. stream execution
         async for event in graph.astream_events(initial_state, config=config, version="v2"):
             kind = event["event"]
             node_name = event.get("metadata", {}).get("langgraph_node")
 
             if kind == "on_chat_model_end" and node_name == "agent":
-                content = event["data"]["output"].content
+                output = event["data"]["output"]
+                content = output.content
                 if content:
+                    has_yielded_content = True
                     yield f"data: {json.dumps({'type': 'answer', 'content': content})}\n\n"
+                
+                # If turn has tool calls, notify frontend that we are continuing to process
+                if hasattr(output, 'tool_calls') and output.tool_calls:
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': f'Agent is executing {len(output.tool_calls)} tool(s)...'})}\n\n"
 
             elif kind == "on_tool_start":
                 yield f"data: {json.dumps({'type': 'tool', 'tool': event['name']})}\n\n"
@@ -170,25 +177,26 @@ class ChatService:
 
         # Determine true status
         safety = final_state.get("safety_metadata", {})
-        if not safety.get("is_safe", True):
+        is_safe = safety.get("is_safe", True)
+        
+        if not is_safe:
             status = "blocked"
-            block_msg = final_msg_content
-            yield f"data: {json.dumps({'type': 'answer', 'content': block_msg})}\n\n"
+            # If it was blocked by guardrail, we definitively yield the block message
+            yield f"data: {json.dumps({'type': 'answer', 'content': final_msg_content})}\n\n"
         elif snapshot.next:
             status = "pending_review"
-            # Yield the final message (with disclaimer)
-            yield f"data: {json.dumps({'type': 'answer', 'content': final_msg_content})}\n\n"
+            # For HITL, we MUST yield the final message as the definitive "preview"
+            # but we use a distinct event to avoid simple duplication if possible
+            # or we just rely on the frontend to replace content with 'final' content.
         else:
             status = "success"
-            # We already yielded chunks during the stream. 
-            # Yielding the full content again at the end ensures the user sees the final 
-            # version (with disclaimer if any) as a single block if the stream failed to render well.
-            if final_msg_content:
-                yield f"data: {json.dumps({'type': 'answer', 'content': final_msg_content})}\n\n"
 
+        # The 'final' event is the absolute source of truth.
+        # Frontend should use this content to replace the accumulated state.
         yield f"data: {json.dumps({
             'type': 'final',
             'status': status,
             'thread_id': thread_id,
+            'content': final_msg_content,
             'usage': usage
         })}\n\n"

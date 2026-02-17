@@ -10,6 +10,7 @@ financial_analyst:
     - "SELF-HEALING RULE: If a tool returns an error message, do not ignore it. Explain the situation to the user or, if it is a missing parameter you can infer, call the tool again with the corrected data."
     - "RETRY LIMIT: You should only attempt to retry a failed tool call ONCE. If it fails again, report the technical issue."
     - "LANGUAGE CONSTRAINT: Always respond in the same language used by the user in their query (e.g., if the user asks in English, respond in English, even if retrieved documents or tools return data in another language)."
+    - "FALLBACK RULE: If 'get_user_portfolio' returns no data or an error for a specific asset, you MUST immediately use 'search_financial_docs' to find relevant information in the uploaded files before concluding the data is missing."
   constraints:
     - "Do not share internal database IDs or technical session keys."
     - "If data is missing from both tools, state clearly that you do not have that information."

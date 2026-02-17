@@ -10,26 +10,55 @@ from app.service.agent_tools import FINA_TOOLS
 
 logger = get_logger("GRAPH_NODES")
 
-# Setup the LLM with Tools
-# We bind the tools to the model so it knows what it can do.
-llm = ChatGroq(
-    model=settings.LLM_MODEL,
-    temperature=settings.LLM_TEMPERATURE,  # Financial analysis requires consistency
-    groq_api_key=settings.GROQ_API_KEY,
-    streaming=True
-).bind_tools(FINA_TOOLS)
-
+def get_llm(model_name: str):
+    """Factory to create LLM instances with tools bound."""
+    return ChatGroq(
+        model=model_name,
+        temperature=settings.LLM_TEMPERATURE,
+        groq_api_key=settings.GROQ_API_KEY,
+        streaming=True
+    ).bind_tools(FINA_TOOLS)
 
 async def call_model(state: AgentState) -> dict:
-    """Agent Node: Injects dynamic system prompt before LLM decision."""
-    logger.info("Agent is thinking with dynamic prompt...")
-
+    """Agent Node: Injects dynamic system prompt and handles model fallbacks."""
+    
+    # Priority list: Primary model followed by fallbacks
+    models_to_try = [settings.LLM_MODEL] + settings.LLM_FALLBACK_MODELS
+    
     system_content = prompt_loader.get_analyst_prompt()
     system_message = SystemMessage(content=system_content)
     messages = [system_message] + state["messages"]
 
-    # In streaming mode, 'ainvoke' should reconstruct the full message and metadata
-    response = await llm.ainvoke(messages)
+    last_error = None
+    
+    for model_name in models_to_try:
+        try:
+            logger.info(f"Agent is thinking using model: {model_name}")
+            current_llm = get_llm(model_name)
+            response = await current_llm.ainvoke(messages)
+            
+            # If successful, break the loop
+            break
+        except Exception as e:
+            error_str = str(e).lower()
+            # Detect Rate Limit (429)
+            is_rate_limit = "429" in error_str or "rate_limit_exceeded" in error_str
+            # Detect Decommissioned (400) or Unsupported
+            is_invalid_model = "400" in error_str or "model_decommissioned" in error_str or "not supported" in error_str
+            
+            if is_rate_limit or is_invalid_model:
+                reason = "hit rate limit" if is_rate_limit else "is decommissioned/unsupported"
+                logger.warning(f"⚠️ Model {model_name} {reason}. Trying fallback...")
+                last_error = e
+                continue
+            else:
+                # Other errors should propagate immediately
+                logger.error(f"❌ Unexpected error with model {model_name}: {error_str}")
+                raise e
+    else:
+        # If the loop finishes without 'break', all models failed
+        logger.error("🛑 All LLM models exhausted or failed.")
+        raise last_error if last_error else Exception("LLM invocation failed")
 
     # --- ROBUST TOKEN EXTRACTION ---
     # 1. Try standardized 'usage_metadata' (preferred in latest LangChain versions)
@@ -56,8 +85,6 @@ async def call_model(state: AgentState) -> dict:
     logger.info(f"Final Usage Capture -> P: {prompt_tokens}, C: {completion_tokens}, Cost: ${cost:.6f}")
     
     if completion_tokens > 0 and not response.content:
-        logger.warning(f"⚠️ Model generated {completion_tokens} tokens but content is empty!")
-        
         # 1. Manual Tool Call Rescue (for Llama models on Groq/Fireworks)
         raw_tools = response.additional_kwargs.get("tool_calls", [])
         if not getattr(response, 'tool_calls', None) and raw_tools:
@@ -78,6 +105,13 @@ async def call_model(state: AgentState) -> dict:
                     "type": "tool_call"
                 })
             response.tool_calls = parsed_tools
+
+        # --- REFINED WARNING LOGIC ---
+        # If there are tool calls, a lack of content is expected (Llama technical turn)
+        if response.tool_calls:
+            logger.info(f"⚙️ Model turn completed with {len(response.tool_calls)} tool calls (technical turn).")
+        else:
+            logger.warning(f"⚠️ Model generated {completion_tokens} tokens but content is empty!")
 
         # 2. Refusal Rescue
         refusal = response.additional_kwargs.get("refusal")

@@ -6,6 +6,14 @@ from app.graph.state import AgentState
 
 logger = get_logger("GUARDRAILS")
 
+def get_guard_llm(model_name: str):
+    """Creates a guardrail LLM instance."""
+    return ChatGroq(
+        temperature=0,
+        model_name=model_name,
+        groq_api_key=settings.GROQ_API_KEY
+    )
+
 async def input_guardrail(state: AgentState):
     """
     Checks if the user input is within the allowed financial domain.
@@ -20,22 +28,48 @@ async def input_guardrail(state: AgentState):
     last_user_message = messages[-1].content
     logger.info(f"🔍 INPUT GUARDRAIL START: Checking message: '{last_user_message[:50]}...'")
     
-    llm = ChatGroq(
-        temperature=0,
-        model_name=settings.LLM_MODEL,
-        groq_api_key=settings.GROQ_API_KEY
-    )
-
+    # Cascade list
+    models_to_try = [settings.LLM_MODEL] + settings.LLM_FALLBACK_MODELS
     prompt = settings.GUARDRAIL_PROMPT.format(domain=settings.GUARDRAIL_SENSITIVE_DOMAIN)
     
+    last_error = None
+    response = None
+
+    for model_name in models_to_try:
+        try:
+            logger.info(f"Guardrail is running using model: {model_name}")
+            llm = get_guard_llm(model_name)
+            
+            # We wrap the user query in a system context for the guardrail
+            system_msg = {"role": "system", "content": prompt}
+            user_msg = {"role": "user", "content": last_user_message}
+            guard_messages = [system_msg, user_msg]
+            
+            response = await llm.ainvoke(guard_messages)
+            break # Success
+        except Exception as e:
+            error_str = str(e).lower()
+            is_rate_limit = "429" in error_str or "rate_limit_exceeded" in error_str
+            is_invalid_model = "400" in error_str or "model_decommissioned" in error_str or "not supported" in error_str
+            
+            if is_rate_limit or is_invalid_model:
+                reason = "hit rate limit" if is_rate_limit else "is decommissioned/unsupported"
+                logger.warning(f"⚠️ Guardrail model {model_name} {reason}. Trying fallback...")
+                last_error = e
+                continue
+            else:
+                logger.error(f"❌ Guardrail unexpected error with {model_name}: {error_str}")
+                # For non-transient errors, we might want to fail the guardrail (or fail open)
+                # But here we'll continue to see if another model works unless it's a critical auth error
+                last_error = e
+                continue
+
+    if not response:
+        logger.error("🛑 All Guardrail models failed.")
+        # Fall-safe: if guardrail fails completely, we allow the message but log it
+        return {"safety_metadata": {"is_safe": True, "reason": "All guardrail models failed", "category": "error"}}
+
     try:
-        # We wrap the user query in a system context for the guardrail
-        system_msg = {"role": "system", "content": prompt}
-        user_msg = {"role": "user", "content": last_user_message}
-        guard_messages = [system_msg, user_msg]
-        
-        response = await llm.ainvoke(guard_messages)
-        
         # Robust JSON extraction using regex (finds first { and last })
         import re
         match = re.search(r'(\{.*\})', response.content, re.DOTALL)

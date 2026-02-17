@@ -17,10 +17,17 @@ import IngestionPanel from './IngestionPanel';
 import HITLPanel from './HITLPanel';
 import PortfolioOverview from './PortfolioOverview';
 
+export interface PendingReview {
+  threadId: string;
+  summary: string;
+}
+
 export default function Dashboard() {
   const { user, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('chat');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [pendingReview, setPendingReview] = useState<PendingReview | null>(null);
+  const [lastDecision, setLastDecision] = useState<any>(null);
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Member';
 
@@ -28,9 +35,9 @@ export default function Dashboard() {
     <div className="dashboard-container">
       {/* Sidebar Navigation */}
       <aside className={`sidebar glass-panel ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
-        <div className="sidebar-header flex-center">
-          <div className="logo-icon gradient-bg">F</div>
-          {isSidebarOpen && <span className="logo-text ml-3">FINA</span>}
+        <div className="sidebar-header flex items-center px-2">
+          <div className="logo-icon premium-gradient shadow-lg shadow-primary/20">F</div>
+          {isSidebarOpen && <span className="logo-text ml-3 gradient-text font-black tracking-tighter text-xl">FINA</span>}
         </div>
 
         <nav className="sidebar-nav">
@@ -48,21 +55,9 @@ export default function Dashboard() {
             collapsed={!isSidebarOpen}
             onClick={() => setActiveTab('docs')}
           />
-          <NavItem
-            icon={<LayoutDashboard size={20} />}
-            label="Portfolio"
-            active={activeTab === 'portfolio'}
-            collapsed={!isSidebarOpen}
-            onClick={() => setActiveTab('portfolio')}
-          />
         </nav>
 
         <div className="sidebar-footer">
-          <NavItem
-            icon={<Settings size={20} />}
-            label="Settings"
-            collapsed={!isSidebarOpen}
-          />
           <div className="user-profile glass-card">
             <User size={20} className="text-primary" />
             {isSidebarOpen && (
@@ -81,9 +76,8 @@ export default function Dashboard() {
       {/* Main Content Area */}
       <main className="main-content">
         <header className="content-header">
-          <div className="search-bar glass-card">
-            <Search size={18} className="text-muted" />
-            <input type="text" placeholder="Search across your financial history..." />
+          <div className="header-title">
+            <h1 className="text-xl font-bold uppercase tracking-tight">Financial Intelligence Agent</h1>
           </div>
           <div className="header-actions">
             <button className="icon-btn glass-card"><PanelRightClose size={20} /></button>
@@ -91,14 +85,27 @@ export default function Dashboard() {
         </header>
 
         <section className="content-body">
-          {activeTab === 'chat' && <ChatInterface />}
+          {activeTab === 'chat' && (
+            <ChatInterface
+              onPendingReview={setPendingReview}
+              lastDecision={lastDecision}
+            />
+          )}
           {activeTab === 'docs' && <IngestionPanel />}
-          {activeTab === 'portfolio' && <PortfolioOverview />}
         </section>
       </main>
 
-      {/* HITL Right Panel (Simulation) */}
-      <HITLPanel />
+      {/* HITL Right Panel (Simulation) - Hidden on Docs tab as requested */}
+      {activeTab !== 'docs' && (
+        <HITLPanel
+          userId={user?.id || ""}
+          pendingReview={pendingReview}
+          onDecision={(result) => {
+            setPendingReview(null);
+            if (result) setLastDecision(result);
+          }}
+        />
+      )}
 
       <style jsx>{`
         .dashboard-container {
@@ -130,12 +137,18 @@ export default function Dashboard() {
         .logo-icon {
           width: 40px;
           height: 40px;
-          border-radius: 10px;
+          border-radius: 12px;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-weight: 700;
+          font-weight: 800;
           font-family: 'Outfit', sans-serif;
+          color: white;
+          font-size: 1.2rem;
+        }
+
+        .premium-gradient {
+          background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #d946ef 100%);
         }
 
         .sidebar-nav {

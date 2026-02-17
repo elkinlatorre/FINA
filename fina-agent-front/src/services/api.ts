@@ -90,5 +90,30 @@ export const apiService = {
         }
 
         return await response.json();
+    },
+
+    async approveRequest(threadId: string, approve: boolean, supervisorId: string, userId: string, editedResponse?: string) {
+        const headers = await getAuthHeaders();
+        const response = await fetch(`${API_BASE_URL}/approve`, {
+            method: 'POST',
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                thread_id: threadId,
+                approve,
+                supervisor_id: supervisorId,
+                user_id: userId,
+                edited_response: editedResponse
+            }),
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || 'Approval failed');
+        }
+
+        return await response.json();
     }
 };
