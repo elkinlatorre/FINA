@@ -19,3 +19,5 @@ PyJWT>=2.8.0
 PyYAML==6.0.1
 aiosqlite==0.20.0
 langchain==0.3.27
+docx2txt>=0.8
+cryptography>=42.0.0

@@ -33,18 +33,18 @@ class IngestionService:
         """Returns the specific path for a user's vector database."""
         return os.path.join(settings.VECTOR_DB_PATH, user_id)
 
-    async def process_pdf(self, file_path: str, user_id: str) -> int:
-        """Process PDF file and store in user-specific vector database.
+    async def process_file(self, file_path: str, user_id: str) -> int:
+        """Process PDF, TXT or DOCX file and store in user-specific vector database.
         
         Args:
-            file_path: Path to the PDF file
+            file_path: Path to the file
             user_id: ID of the user owning the document
             
         Returns:
             Number of chunks processed
             
         Raises:
-            IngestionError: If PDF processing fails or constraints are violated
+            IngestionError: If file processing fails or constraints are violated
         """
         # Validate file size
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
@@ -53,9 +53,21 @@ class IngestionService:
 
         try:
             file_hash = self._calculate_hash(file_path)
-            logger.info(f"Processing PDF for user {user_id} (Hash: {file_hash[:10]})")
+            ext = os.path.splitext(file_path)[1].lower()
+            logger.info(f"Processing {ext} for user {user_id} (Hash: {file_hash[:10]})")
 
-            loader = PyPDFLoader(file_path)
+            # Inyección de cargador dinámico
+            if ext == ".pdf":
+                loader = PyPDFLoader(file_path)
+            elif ext == ".txt":
+                from langchain_community.document_loaders import TextLoader
+                loader = TextLoader(file_path, encoding='utf-8')
+            elif ext == ".docx":
+                from langchain_community.document_loaders import Docx2txtLoader
+                loader = Docx2txtLoader(file_path)
+            else:
+                raise IngestionError(f"Unsupported file extension: {ext}")
+
             docs = loader.load()
 
             splitter = RecursiveCharacterTextSplitter(
@@ -66,13 +78,48 @@ class IngestionService:
 
             # Save to user-specific FAISS index
             user_db_path = self._get_user_db_path(user_id)
-            vector_db = FAISS.from_documents(chunks, self.embeddings)
+            
+            # Diagnostic: Deep check of the path structure
+            logger.info(f"🛠️ Step-by-step directory check for: {user_db_path}")
+            current_path = "/"
+            for part in user_db_path.split("/"):
+                if not part: continue
+                current_path = os.path.join(current_path, part)
+                if not os.path.exists(current_path):
+                    try:
+                        logger.info(f"📁 Attempting to create directory: {current_path}")
+                        os.makedirs(current_path, exist_ok=True)
+                        logger.info(f"✅ Created: {current_path}")
+                    except Exception as e:
+                        logger.error(f"❌ FAILED to create {current_path}: {e}")
+                        raise
+                else:
+                    is_w = os.access(current_path, os.W_OK)
+                    logger.info(f"📂 Exists: {current_path} | Writable: {is_w}")
+            
+            # Now proceed with FAISS
+            # We check for index.faiss because the directory might exist (created by diagnostics) but be empty
+            index_file = os.path.join(user_db_path, "index.faiss")
+            if os.path.exists(index_file):
+                logger.info(f"Merging with existing vector DB for user {user_id}")
+                vector_db = FAISS.load_local(
+                    user_db_path, 
+                    self.embeddings, 
+                    allow_dangerous_deserialization=True
+                )
+                vector_db.add_documents(chunks)
+            else:
+                logger.info(f"Creating new vector DB for user {user_id}")
+                vector_db = FAISS.from_documents(chunks, self.embeddings)
+            
+            logger.info(f"💾 Saving vector DB to {user_db_path}")
             vector_db.save_local(user_db_path)
+            logger.info(f"✅ Vector DB saved successfully for {user_id}")
 
             return len(chunks)
         except Exception as e:
-            logger.error(f"PDF processing failed for user {user_id}: {str(e)}")
-            raise IngestionError(f"Failed to process PDF: {str(e)}")
+            logger.error(f"File processing failed for user {user_id}: {str(e)}")
+            raise IngestionError(f"Failed to process file: {str(e)}")
 
     async def search_in_vector_db(self, query: str, user_id: str, k: int = 3) -> str:
         """Search for relevant document chunks in user-specific FAISS database.

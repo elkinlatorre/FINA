@@ -26,11 +26,23 @@ class FinancialGraphManager:
             if settings.SUPABASE_DB_URL:
                 logger.info("🔗 Using Cloud Postgres (Supabase) for persistence.")
                 # We use a connection pool for better performance in production
-                self.pool = AsyncConnectionPool(conninfo=settings.SUPABASE_DB_URL, max_size=20)
+                self.pool = AsyncConnectionPool(conninfo=settings.SUPABASE_DB_URL, max_size=20, open=False)
+                await self.pool.open()
+                logger.info("✅ Connection pool opened successfully")
+                
                 self.saver = AsyncPostgresSaver(self.pool)
-                # Note: AsyncPostgresSaver doesn't need __aenter__ like SqliteSaver in latest versions
-                # but we need to ensure the pool is ready. The saver handles migrations.
-                await self.saver.setup() 
+                try:
+                    # LangGraph setup runs DDL migrations. 
+                    # If this fails with Transaction error, it's almost always the Supabase Pooler.
+                    await self.saver.setup() 
+                    logger.info("✅ LangGraph migrations completed successfully")
+                except Exception as e:
+                    logger.error(f"❌ LangGraph setup failed: {str(e)}")
+                    if "pooler" in settings.SUPABASE_DB_URL.lower():
+                        logger.warning("🚨 CRITICAL: You are using the Supabase Pooler URL.")
+                        logger.warning("💡 For LangGraph migrations, you MUST use the DIRECT connection host.")
+                        logger.warning("💡 Example: db.PROJECT_REF.supabase.co instead of aws-0-us-west-2.pooler...")
+                    raise
                 checkpointer = self.saver
             else:
                 logger.info(f"📁 Using Local SQLite ({settings.CHECKPOINT_DB_PATH}) for persistence.")

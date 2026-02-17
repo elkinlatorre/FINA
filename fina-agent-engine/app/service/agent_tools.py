@@ -18,7 +18,7 @@ async def get_user_portfolio(state: Annotated[dict, InjectedState]):
     user_id = state.get("user_id", "user123")
     return await mcp_client.fetch_portfolio(user_id)
 
-@tool("search_financial_docs", args_schema=SearchSchema)
+@tool("search_financial_docs")
 async def search_financial_docs(query: str, state: Annotated[dict, InjectedState]):
     """
     Searches within the uploaded financial PDF documents for specific

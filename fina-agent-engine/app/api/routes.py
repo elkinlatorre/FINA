@@ -165,31 +165,33 @@ async def health_check(mcp_client: MCPClientDep) -> HealthResponse:
 
 
 @router.post("/ingest", response_model=IngestionResponse, tags=["Data Ingestion"])
-async def upload_pdf(
+async def upload_file(
     file: UploadFile = File(...),
     ingest_service: IngestionServiceDep = None,
     current_user: CurrentUserDep = None
 ) -> IngestionResponse:
     user_id = current_user.get("user_id")
     logger.info(f"File upload from user {user_id}")
-    """PDF Ingestion Endpoint: Processes PDF files for vector database storage.
+    """File Ingestion Endpoint: Processes PDF, TXT, or DOCX files for vector database storage.
     
-    Validates file type, processes the PDF into chunks, and stores
+    Validates file type, processes the file into chunks, and stores
     in the vector database for RAG retrieval.
     
     Args:
-        file: Uploaded PDF file
+        file: Uploaded file
         ingest_service: Injected IngestionService dependency
         
     Returns:
         IngestionResponse with processing results
         
     Raises:
-        ValidationError: If file is not a PDF
+        ValidationError: If file type is not supported
         HTTPException: On processing errors
     """
-    if not file.filename.lower().endswith(".pdf"):
-        raise ValidationError("Only PDF files are allowed")
+    from app.core.settings import settings
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in settings.ALLOWED_FILE_EXTENSIONS:
+        raise ValidationError(f"File type {ext} not allowed. Supported: {settings.ALLOWED_FILE_EXTENSIONS}")
 
     os.makedirs("data", exist_ok=True)
     temp_path = f"data/temp_{file.filename}"
@@ -198,8 +200,8 @@ async def upload_pdf(
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Process the PDF with user isolation
-        chunks = await ingest_service.process_pdf(temp_path, user_id)
+        # Process the file with user isolation
+        chunks = await ingest_service.process_file(temp_path, user_id)
 
         return IngestionResponse(
             status="success",

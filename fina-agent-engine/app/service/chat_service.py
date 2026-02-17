@@ -153,43 +153,38 @@ class ChatService:
         await asyncio.sleep(0.1)
 
         # 3. Recover the REAL state from the SQLite checkpointer
-        # This ensures we read what        # 3. Recover the REAL state from the SQLite checkpointer
         snapshot = await graph.aget_state(config)
         final_state = snapshot.values
-
-        # --- IMPORTANT: Manually invoke output_guardrail for the final state ---
-        # This is CRITICAL because if the graph is interrupted (pending_review),
-        # the 'guardrail_output' node is never reached in the graph execution.
-        from app.graph.guardrails import output_guardrail
-        guardrail_result = await output_guardrail(final_state)
-        # Update final_state with messages from guardrail (which may have been modified)
-        if "messages" in guardrail_result:
-            final_state["messages"] = guardrail_result["messages"]
 
         # Extract accumulated usage
         usage = final_state.get("usage", {
             "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "estimated_cost": 0.0
         })
+        
+        # Get final message content
+        messages = final_state.get("messages", [])
+        final_msg_content = ""
+        if messages:
+            final_msg_content = messages[-1].content
+            logger.info(f"🏁 Final state messages count: {len(messages)} | Last message content length: {len(final_msg_content)}")
 
         # Determine true status
         safety = final_state.get("safety_metadata", {})
         if not safety.get("is_safe", True):
             status = "blocked"
-            block_msg = final_state["messages"][-1].content
+            block_msg = final_msg_content
             yield f"data: {json.dumps({'type': 'answer', 'content': block_msg})}\n\n"
         elif snapshot.next:
             status = "pending_review"
-            # Yield the final message (with disclaimer) as a single definitive answer
-            final_msg_content = final_state["messages"][-1].content
+            # Yield the final message (with disclaimer)
             yield f"data: {json.dumps({'type': 'answer', 'content': final_msg_content})}\n\n"
         else:
             status = "success"
-            # If it was a success but NOT from a human review (direct response), 
-            # we should also ensure the final content with potential disclaimer is sent.
-            # But the 'on_chat_model_end' might have already sent chunks. 
-            # To avoid duplication but ensure disclaimer, let's yield it only if content changed.
-            final_msg_content = final_state["messages"][-1].content
-            yield f"data: {json.dumps({'type': 'answer', 'content': final_msg_content})}\n\n"
+            # We already yielded chunks during the stream. 
+            # Yielding the full content again at the end ensures the user sees the final 
+            # version (with disclaimer if any) as a single block if the stream failed to render well.
+            if final_msg_content:
+                yield f"data: {json.dumps({'type': 'answer', 'content': final_msg_content})}\n\n"
 
         yield f"data: {json.dumps({
             'type': 'final',

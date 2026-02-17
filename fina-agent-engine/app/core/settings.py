@@ -45,7 +45,7 @@ class Settings:
     MCP_PORT: int = 8001
     
     # LLM Configuration
-    LLM_MODEL: str = "llama-3.1-8b-instant" #"llama-3.3-70b-versatile"
+    LLM_MODEL: str = "llama-3.3-70b-versatile" # upgraded from 8b for reliability
     LLM_TEMPERATURE: float = 0.0
     PRICE_1K_PROMPT: float = 0.00059
     PRICE_1K_COMPLETION: float = 0.00079
@@ -69,9 +69,9 @@ class Settings:
     CHUNK_SIZE: int = 1000
     CHUNK_OVERLAP: int = 200
     
-    # Data paths
-    DATA_DIR: str = "data"
-    VECTOR_DB_PATH: str = "data/vector_db"
+    # Data paths (Always use absolute paths inside Docker)
+    DATA_DIR: str = "/app/data"
+    VECTOR_DB_PATH: str = "/app/data/vector_storage"
     
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")

@@ -54,6 +54,43 @@ async def call_model(state: AgentState) -> dict:
     )
 
     logger.info(f"Final Usage Capture -> P: {prompt_tokens}, C: {completion_tokens}, Cost: ${cost:.6f}")
+    
+    if completion_tokens > 0 and not response.content:
+        logger.warning(f"⚠️ Model generated {completion_tokens} tokens but content is empty!")
+        
+        # 1. Manual Tool Call Rescue (for Llama models on Groq/Fireworks)
+        raw_tools = response.additional_kwargs.get("tool_calls", [])
+        if not getattr(response, 'tool_calls', None) and raw_tools:
+            logger.info(f"🩹 Rescuing {len(raw_tools)} tool calls from additional_kwargs")
+            parsed_tools = []
+            for t in raw_tools:
+                fn = t.get("function", {})
+                args_str = fn.get("arguments", "{}")
+                try:
+                    import json
+                    args = json.loads(args_str) if args_str and args_str != "null" else {}
+                except:
+                    args = {}
+                parsed_tools.append({
+                    "name": fn.get("name"),
+                    "args": args,
+                    "id": t.get("id"),
+                    "type": "tool_call"
+                })
+            response.tool_calls = parsed_tools
+
+        # 2. Refusal Rescue
+        refusal = response.additional_kwargs.get("refusal")
+        if refusal:
+            logger.info(f"🛡️ Model refusal detected: {refusal}")
+            response.content = refusal
+            
+        # 3. Metadata Content Rescue
+        elif not response.tool_calls:
+            msg_meta = response.response_metadata.get("message", {})
+            if isinstance(msg_meta, dict) and msg_meta.get("content"):
+                logger.info(f"🩹 Rescued content from metadata: {msg_meta.get('content')[:50]}...")
+                response.content = msg_meta.get("content")
 
     return {
         "messages": [response],

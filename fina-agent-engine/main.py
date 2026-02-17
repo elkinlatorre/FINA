@@ -18,6 +18,29 @@ logger = get_logger("MAIN_AGENT")
 async def lifespan(app: FastAPI):
     # Startup: Initialize graph and database
     logger.info("Starting FINA Agent Engine...")
+    
+    # Permission diagnostics for Windows/Docker volumes
+    import os
+    data_dir = settings.DATA_DIR
+    logger.info(f"🔍 Diagnostic: Checking access to {data_dir}")
+    if os.path.exists(data_dir):
+        is_writable = os.access(data_dir, os.W_OK)
+        stats = os.stat(data_dir)
+        logger.info(f"📂 Data dir exists. Protected/Read-only: {not is_writable} | Owner UID: {stats.st_uid} | Current UID: {os.getuid()}")
+        
+        # Try a real write test
+        test_file = os.path.join(data_dir, ".startup_test")
+        try:
+            with open(test_file, "w") as f:
+                f.write("test")
+            os.remove(test_file)
+            logger.info(f"✅ Write test PASSED for {data_dir}")
+        except Exception as e:
+            logger.error(f"❌ Write test FAILED for {data_dir}: {e}")
+            logger.warning("💡 TIP: Run 'icacls data /grant Everyone:F /T' on your Windows host in the engine folder.")
+    else:
+        logger.warning(f"⚠️ Data directory {data_dir} does not exist yet.")
+
     await graph_manager.initialize()
     logger.info("Graph manager initialized successfully")
     yield

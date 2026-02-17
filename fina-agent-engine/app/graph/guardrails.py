@@ -91,38 +91,41 @@ async def output_guardrail(state: AgentState):
     """
     Checks the agent output for compliance and adds disclaimers if needed.
     """
-    # This could be more complex, but for now we'll check if it's already marked as review
-    # or if we need to append a mandatory disclaimer.
     messages = state.get("messages", [])
     if not messages:
         return state
 
     last_message = messages[-1]
-    logger.info(f"🛡️ OUTPUT GUARDRAIL START: Checking response content (length: {len(getattr(last_message, 'content', ''))})")
+    content = getattr(last_message, "content", "")
+    logger.info(f"🛡️ OUTPUT GUARDRAIL START: Checking response content (length: {len(content)})")
     
-    # Example: Check if it's an AI message and doesn't have a disclaimer
+    # Financial triggers to trigger disclaimer
+    financial_triggers = ["advice", "invest", "portfolio", "recommendation", "buy", "sell", "asset", "shares", "stock", "balance"]
     disclaimer = "\n\n*Note: This information is for educational purposes and does not constitute legal financial advice.*"
     
-    # Financial keywords to trigger disclaimer (in English now)
-    financial_triggers = ["advice", "invest", "portfolio", "recommendation", "buy", "sell", "asset", "shares", "stock", "balance"]
-    
-    content = ""
-    if hasattr(last_message, "content"):
-        content = last_message.content
-    elif isinstance(last_message, dict):
-        content = last_message.get("content", "")
-        
     content_lower = content.lower()
-    
     should_add_disclaimer = any(trigger in content_lower for trigger in financial_triggers)
     
     if content and should_add_disclaimer:
         if disclaimer not in content:
             logger.info("➕ Adding mandatory financial disclaimer to response.")
-            if hasattr(last_message, "content"):
-                last_message.content += disclaimer
-            elif isinstance(last_message, dict):
-                last_message["content"] += disclaimer
+            from langchain_core.messages import AIMessage
+            
+            # Create a NEW message to ensure compatibility with all checkpointers
+            if isinstance(last_message, AIMessage):
+                last_message = AIMessage(
+                    content=content + disclaimer,
+                    tool_calls=last_message.tool_calls,
+                    additional_kwargs=last_message.additional_kwargs,
+                    response_metadata=last_message.response_metadata,
+                    id=last_message.id
+                )
+            else:
+                # Fallback for simpler message types or dicts
+                if hasattr(last_message, "content"):
+                    last_message.content = content + disclaimer
+                elif isinstance(last_message, dict):
+                    last_message["content"] = content + disclaimer
             
     logger.info("✅ OUTPUT GUARDRAIL END")
     return {"messages": [last_message]}
