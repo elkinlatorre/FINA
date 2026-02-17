@@ -250,7 +250,15 @@ export default function Dashboard() {
   );
 }
 
-function NavItem({ icon, label, active = false, collapsed = false, onClick }: any) {
+interface NavItemProps {
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+  collapsed?: boolean;
+  onClick?: () => void;
+}
+
+function NavItem({ icon, label, active = false, collapsed = false, onClick }: NavItemProps) {
   return (
     <button
       onClick={onClick}

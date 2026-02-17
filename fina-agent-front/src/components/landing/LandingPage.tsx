@@ -314,7 +314,13 @@ export default function LandingPage() {
   );
 }
 
-function FeatureCard({ icon, title, description }) {
+interface FeatureCardProps {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}
+
+function FeatureCard({ icon, title, description }: FeatureCardProps) {
   return (
     <div className="glass-card p-8">
       <div className="icon-container mb-6 flex-center h-12 w-12 rounded-xl bg-white/5 border border-white/10">
